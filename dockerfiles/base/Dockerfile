@@ -12,8 +12,7 @@ USER root
 WORKDIR /tmp
 
 # Environment Settings
-ENV TZ=PST \
-    DEBIAN_FRONTEND=noninteractive \
+ENV DEBIAN_FRONTEND=noninteractive \
     LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8 \
     TERM=xterm-256color
@@ -40,8 +39,6 @@ RUN apt-get update --yes --quiet --fix-missing \
         tcsh=6.24.10-4build1 \
     && apt-get clean --yes \
     && rm -rf /var/lib/apt/lists/* /var/tmp/* \
-    && ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
-    && dpkg-reconfigure --frontend noninteractive tzdata \
     && locale-gen en_US.UTF-8
 
 WORKDIR /root
