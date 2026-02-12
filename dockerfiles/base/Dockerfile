@@ -16,11 +16,7 @@ ENV TZ=PST \
     DEBIAN_FRONTEND=noninteractive \
     LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8 \
-    TERM=xterm-256color \
-    CONDA_DIR=/opt/conda \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
-ENV PATH="${CONDA_DIR}/bin:${PATH}"
+    TERM=xterm-256color
 
 # Layer 0: OS - System Foundation
 RUN apt-get update --yes --quiet --fix-missing \
