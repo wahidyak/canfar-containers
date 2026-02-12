@@ -1,4 +1,4 @@
-# Layer 3: Interactive Terminal (With OpenCode AI)
+# Layer 5: Interactive Terminal (With OpenCode AI)
 FROM images.canfar.net/cadc/webterm:26.02
 
 LABEL description="CANFAR Terminal Environment with OpenCode AI"
@@ -10,7 +10,5 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
     && chmod +x /usr/local/bin/opencode \
     && rm -rf /root/.opencode
 
-# Add OpenCode Alias
+# Add alias for easier access
 RUN echo 'alias oc="opencode"' >> /etc/profile.d/terminal.sh
-
-CMD ["/skaha/startup.sh"]

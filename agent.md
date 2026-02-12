@@ -5,9 +5,10 @@ You are a Cloud Systems Engineer specializing in Docker containerization for the
 
 ## 2. Tech Stack & Architecture
 - **OS Foundation:** Ubuntu 24.04 LTS (Pinned by digest in `base/Dockerfile`).
+- **Python Runtime:** Python 3.12, Micromamba, `uv`, `pixi`.
 - **Standard Shell:** Bash (primary), Zsh, Tcsh.
 - **Interactive Stack:** `ttyd` (Web Terminal), `tmux`, `starship` (Gruvbox theme).
-- **Data/Env Tools:** `rclone`, `micromamba`, `uv`, `pixi`, `jq`.
+- **Data/Env Tools:** `rclone`, `jq`, `htop`, `rsync`.
 - **AI Integration:** OpenCode AI (accessible via `oc` or `opencode`).
 - **Image Registry:** `images.canfar.net/cadc/`
 
@@ -16,11 +17,13 @@ Images must be built and pushed in sequence to maintain the dependency chain.
 
 ### Build Sequence (Release 26.02)
 1. **Base:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/base:26.02 ./dockerfiles/base/`
-2. **Terminal:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/webterm:26.02 ./dockerfiles/terminal/`
-3. **AI Terminal:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/webterm-opencode:26.02 ./dockerfiles/terminal_opencode/`
+2. **Python:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/python:26.02 ./dockerfiles/python/`
+3. **Terminal:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/terminal:26.02 ./dockerfiles/terminal/`
+4. **Webterm:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/webterm:26.02 ./dockerfiles/webterm/`
+5. **AI Terminal:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/webterm-opencode:26.02 ./dockerfiles/opencode/`
 
 ## 4. Coding Style & Patterns
-- **Layering:** Follow the inheritance chain: `base` -> `webterm` -> `webterm-opencode`.
+- **Layering:** Follow the inheritance chain: `base` -> `python` -> `terminal` -> `webterm` -> `opencode`.
 - **Versioning:** Always use the current release tag (e.g., `26.02`) instead of `latest`.
 - **Docker Best Practices:**
     - Combine `apt-get install` and `apt-get clean` in the same `RUN` command to reduce image size.
@@ -32,10 +35,11 @@ Images must be built and pushed in sequence to maintain the dependency chain.
 - **NEVER** use the `latest` tag for base images or outputs.
 - **NEVER** include secrets, CADC credentials, or SSH private keys in any layer.
 - **NEVER** modify the base Ubuntu digest without explicit verification of the downstream science stack layers.
-- **NEVER** restore the archived Python/Mamba layers from `dockerfiles/base/README.md` into the `Dockerfile` without a specific request to move away from the modular runtime model.
 
 ## 6. Project Structure
-- `/dockerfiles/base`: Minimal OS foundation.
-- `/dockerfiles/terminal`: Standard web-based terminal environment (`webterm`).
-- `/dockerfiles/terminal_opencode`: AI-enhanced terminal environment (`webterm-opencode`).
+- `/dockerfiles/base`: Layer 1: Minimal OS foundation.
+- `/dockerfiles/python`: Layer 2: Python Runtime (Mamba, UV, Pixi).
+- `/dockerfiles/terminal`: Layer 3: Interactive CLI environment.
+- `/dockerfiles/webterm`: Layer 4: Web-based terminal.
+- `/dockerfiles/opencode`: Layer 5: AI-enhanced terminal.
 - `/doc`: Project documentation.

@@ -1,11 +1,10 @@
-# Layer 2: Interactive Terminal (No OpenCode)
-FROM images.canfar.net/cadc/base:26.02
+# Layer 3: Interactive Terminal (CLI Environment)
+FROM images.canfar.net/cadc/python:26.02
 
-LABEL description="Standard CANFAR Terminal Environment"
+LABEL description="Standard CANFAR Terminal CLI Environment"
 
 # Install Interactive Tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ttyd=1.7.4-1build2 \
     tmux=3.4-1ubuntu0.1 \
     htop=3.3.0-4build1 \
     rclone=1.60.1+dfsg-3ubuntu0.24.04.4 \
@@ -37,14 +36,5 @@ RUN echo 'alias py="python3"' > /etc/profile.d/terminal.sh \
 # Starship Gruvbox Config
 RUN mkdir -p /etc && printf 'scan_timeout = 1000\ncommand_timeout = 1000\npalette = "gruvbox"\n\n[palettes.gruvbox]\nbg0 = "#282828"\nyellow = "#d79921"\naqua = "#689d6a"\ngreen = "#98971a"\nred = "#cc241d"\n\n[username]\nshow_always = true\nstyle_user = "bg:yellow fg:bg0"\nstyle_root = "bg:red fg:bg0"\nformat = "[ $user ]($style)"\n\n[directory]\nstyle = "bg:aqua fg:bg0"\nformat = "[ $path ]($style)"\ntruncation_length = 0\ntruncate_to_repo = false\n\n[git_branch]\nsymbol = "git:"\nstyle = "bg:green fg:bg0"\nformat = "[ $symbol$branch ]($style)"\n\n[git_status]\ndisabled = true\n\n[container]\ndisabled = true\n\n[character]\nsuccess_symbol = "[ > ](bold green)"\nerror_symbol = "[ x ](bold red)"\n' > /etc/starship.toml
 
-# Startup Script (Modified for Skaha home directory persistence)
-RUN mkdir -p /skaha \
-    && printf '#!/bin/bash\n# Ensure persistent directories exist\nmkdir -p "${HOME}/.conda/envs" "${HOME}/.conda/pkgs" "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi"\nttyd --writable --port 5000 -w "${HOME}" -t titleFixed="CANFAR Webterm" /bin/bash -l\n' > /skaha/startup.sh \
-    && chmod +x /skaha/startup.sh
-
 ENV STARSHIP_CONFIG=/etc/starship.toml \
     TERM=xterm-256color
-
-EXPOSE 5000
-WORKDIR /root
-CMD ["/skaha/startup.sh"]
