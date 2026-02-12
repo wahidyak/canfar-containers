@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1
-ARG PYTHON_VERSION=3.13
 
 # --- STAGE 1: RUNTIME (Layer 0 & 1) ---
 # OS foundation and language runtime. Built on a stable cadence.
