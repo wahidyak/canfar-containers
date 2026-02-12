@@ -9,15 +9,15 @@ You are a Cloud Systems Engineer specializing in Docker containerization for the
 - **Interactive Stack:** `ttyd` (Web Terminal), `tmux`, `starship` (Gruvbox theme).
 - **Data/Env Tools:** `rclone`, `micromamba`, `uv`, `pixi`, `jq`.
 - **AI Integration:** OpenCode AI (accessible via `oc` or `opencode`).
-- **Image Registry:** `images.canfar.net/skaha/`
+- **Image Registry:** `images.canfar.net/cadc/`
 
 ## 3. Executable Commands
 Images must be built and pushed in sequence to maintain the dependency chain.
 
 ### Build Sequence (Release 26.02)
-1. **Base:** `docker build --platform linux/amd64 -t images.canfar.net/skaha/base:26.02 ./dockerfiles/base/`
-2. **Terminal:** `docker build --platform linux/amd64 -t images.canfar.net/skaha/webterm:26.02 ./dockerfiles/terminal/`
-3. **AI Terminal:** `docker build --platform linux/amd64 -t images.canfar.net/skaha/webterm-opencode:26.02 ./dockerfiles/terminal_opencode/`
+1. **Base:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/base:26.02 ./dockerfiles/base/`
+2. **Terminal:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/webterm:26.02 ./dockerfiles/terminal/`
+3. **AI Terminal:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/webterm-opencode:26.02 ./dockerfiles/terminal_opencode/`
 
 ## 4. Coding Style & Patterns
 - **Layering:** Follow the inheritance chain: `base` -> `webterm` -> `webterm-opencode`.

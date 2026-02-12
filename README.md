@@ -18,7 +18,7 @@ canfar-containers/
 
 ## Architecture
 
-The images follow a layered model to ensure consistency and reproducibility. All images are hosted at `images.canfar.net/skaha/`.
+The images follow a layered model to ensure consistency and reproducibility. All images are hosted at `images.canfar.net/cadc/`.
 
 1. **Base Image (`base`)**: 
    - **OS**: Ubuntu 24.04 LTS (Pinned by digest)
@@ -41,12 +41,12 @@ To maintain the dependency chain, images must be built and pushed in sequence us
 **One-Line Build & Push:**
 ```bash
 docker login images.canfar.net && \
-docker build --rm --platform linux/amd64 -t images.canfar.net/skaha/base:26.02 ./dockerfiles/base/ && \
-docker push images.canfar.net/skaha/base:26.02 && \
-docker build --rm --platform linux/amd64 -t images.canfar.net/skaha/webterm:26.02 ./dockerfiles/terminal/ && \
-docker push images.canfar.net/skaha/webterm:26.02 && \
-docker build --rm --platform linux/amd64 -t images.canfar.net/skaha/webterm-opencode:26.02 ./dockerfiles/terminal_opencode/ && \
-docker push images.canfar.net/skaha/webterm-opencode:26.02
+docker build --rm --platform linux/amd64 -t images.canfar.net/cadc/base:26.02 ./dockerfiles/base/ && \
+docker push images.canfar.net/cadc/base:26.02 && \
+docker build --rm --platform linux/amd64 -t images.canfar.net/cadc/webterm:26.02 ./dockerfiles/terminal/ && \
+docker push images.canfar.net/cadc/webterm:26.02 && \
+docker build --rm --platform linux/amd64 -t images.canfar.net/cadc/webterm-opencode:26.02 ./dockerfiles/terminal_opencode/ && \
+docker push images.canfar.net/cadc/webterm-opencode:26.02
 ```
 
 ## Maintenance

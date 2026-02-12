@@ -1,15 +1,15 @@
 # Layer 2: Interactive Terminal (No OpenCode)
-FROM images.canfar.net/skaha/base:26.02
+FROM images.canfar.net/cadc/base:26.02
 
 LABEL description="Standard CANFAR Terminal Environment"
 
 # Install Interactive Tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ttyd \
-    tmux \
-    htop \
-    rclone \
-    jq \
+    ttyd=1.7.4-1build2 \
+    tmux=3.4-1ubuntu0.1 \
+    htop=3.3.0-4build1 \
+    rclone=1.60.1+dfsg-3ubuntu0.24.04.4 \
+    jq=1.7.1-3ubuntu0.24.04.1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Starship Prompt

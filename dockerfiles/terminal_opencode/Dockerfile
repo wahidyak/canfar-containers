@@ -1,5 +1,5 @@
 # Layer 3: Interactive Terminal (With OpenCode AI)
-FROM images.canfar.net/skaha/webterm:26.02
+FROM images.canfar.net/cadc/webterm:26.02
 
 LABEL description="CANFAR Terminal Environment with OpenCode AI"
 
