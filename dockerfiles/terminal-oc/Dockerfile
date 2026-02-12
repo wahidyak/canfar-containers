@@ -4,7 +4,8 @@ FROM images.canfar.net/skaha/webterm:26.02
 LABEL description="CANFAR Terminal Environment with OpenCode AI"
 
 # Install OpenCode AI
-RUN curl -fsSL https://opencode.ai/install | bash \
+ARG OPENCODE_VERSION=1.1.63
+RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VERSION} \
     && mv /root/.opencode/bin/opencode /usr/local/bin/opencode \
     && chmod +x /usr/local/bin/opencode \
     && rm -rf /root/.opencode
