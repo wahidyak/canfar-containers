@@ -40,6 +40,3 @@ RUN apt-get update --yes --quiet --fix-missing \
     && apt-get clean --yes \
     && rm -rf /var/lib/apt/lists/* /var/tmp/* \
     && locale-gen en_US.UTF-8
-
-WORKDIR /root
-CMD ["/bin/bash"]
