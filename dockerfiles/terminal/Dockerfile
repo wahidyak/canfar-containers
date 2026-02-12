@@ -1,5 +1,5 @@
 # Layer 2: Interactive Terminal (No OpenCode)
-FROM images.canfar.net/skaha/opencadc-base:26.02
+FROM images.canfar.net/skaha/base:26.02
 
 LABEL description="Standard CANFAR Terminal Environment"
 
