@@ -29,7 +29,7 @@ Images must be built and pushed in sequence to maintain the dependency chain.
     - Combine `apt-get install` and `apt-get clean` in the same `RUN` command to reduce image size.
     - Use `--no-install-recommends` for all apt installs.
     - Always use `WORKDIR /root` or `/tmp` appropriately.
-- **Persistence Awareness:** Ensure any changes to shell profiles or startup scripts (`/skaha/startup.sh`) do not interfere with Skaha home directory persistence for `.conda`, `.local`, `.cache`, and `.pixi`.
+- **Persistence Awareness:** Ensure any changes to shell profiles or startup scripts (`/cadc/startup.sh`) do not interfere with CADC home directory persistence for `.conda`, `.local`, `.cache`, and `.pixi`.
 
 ## 5. Explicit Boundaries (The "Never" List)
 - **NEVER** use the `latest` tag for base images or outputs.
