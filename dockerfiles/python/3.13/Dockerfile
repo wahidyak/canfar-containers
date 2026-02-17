@@ -16,13 +16,6 @@ LABEL org.opencontainers.image.title="CANFAR Python 3.13 Runtime" \
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# System Dependencies (Essential for UV/Pixi operation)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy binaries from build stages
 COPY --from=pixi /usr/local/bin/pixi /usr/local/bin/pixi
 COPY --from=uv /uv /usr/local/bin/uv
@@ -38,7 +31,3 @@ ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python \
 ENV PIXI_HOME=/usr/local/share/pixi \
     PIXI_BIN_DIR=/usr/local/bin \
     PIXI_CACHE_DIR=/usr/local/share/pixi/cache
-
-# Setup shared directories for persistence & non-root access
-RUN mkdir -p /usr/local/share/uv /usr/local/share/pixi \
-    && chmod -R 777 /usr/local/share/uv /usr/local/share/pixi
