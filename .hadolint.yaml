@@ -1,0 +1,5 @@
+# Hadolint Configuration
+ignored:
+  - DL3008 # Pin versions in apt get install (Ignored to allow latest security patches)
+  - DL3013 # Pin versions in pip (We use uv/pixi for version management)
+  - DL3015 # Avoid additional packages by specifying --no-install-recommends (Double check, but often safe to ignore if we explicitly use it)
