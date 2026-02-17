@@ -2,10 +2,16 @@ name: Python Runtime CI/CD
 
 on:
   push:
-    paths: ['dockerfiles/python/**']
+    paths:
+      - 'dockerfiles/python/**'
+      - '.github/workflows/python-runtime.yml'
+      - '.hadolint.yaml'
     branches: [main]
   pull_request:
-    paths: ['dockerfiles/python/**']
+    paths:
+      - 'dockerfiles/python/**'
+      - '.github/workflows/python-runtime.yml'
+      - '.hadolint.yaml'
 
 jobs:
   # 1. LINT PHASE: Uses Hadolint to check for Dockerfile best practices
