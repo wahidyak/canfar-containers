@@ -6,7 +6,8 @@ FROM ghcr.io/prefix-dev/pixi:0.58.0@sha256:70f606d7281b16705fa39a860fc645cbbf60b
 # renovate: datasource=docker depName=ghcr.io/astral-sh/uv versioning=semver
 FROM ghcr.io/astral-sh/uv:0.9.1@sha256:3b368e735c0227077902233a73c5ba17a3c2097ecdd83049cbaf2aa83adc8a20 AS uv
 
-FROM python:3.14-rc-slim AS base
+# renovate: datasource=docker depName=python
+FROM python:3.14-rc-slim@sha256:e1bb3adc44d158b8b37d647dbfa5864b74f387552c5f12abe9cc95ae773b7c69 AS base
 
 LABEL org.opencontainers.image.title="CANFAR Python 3.14 Runtime" \
       org.opencontainers.image.description="Python 3.14 slim runtime for CANFAR Science Platform" \
