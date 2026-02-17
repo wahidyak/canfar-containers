@@ -15,11 +15,13 @@ You are a Cloud Systems Engineer specializing in Docker containerization for the
 ## 3. Executable Commands
 Images must be built and pushed in sequence to maintain the dependency chain.
 
-### Build Sequence (Release 26.02)
-Use the `build.sh` script to maintain the dependency chain:
-- **Full Build:** `./build.sh all`
-- **Partial Build:** `./build.sh <layer_name>` (e.g., `./build.sh python` will build python and all subsequent layers)
-- **Pushing:** Add the `--push` flag to any command.
+### Build & Deployment
+- **Python Layer:** Automated via GitHub Actions (CI/CD). Pushes to `images.canfar.net/cadc/python:<version>`.
+- **Downstream Layers:** Manually built and tagged with the release version (e.g., `26.02`).
+
+### CI/CD Workflow
+- **Linting:** Every PR/Push is linted using `hadolint`.
+- **Building:** Merges to `main` trigger automated builds for Python 3.10, 3.11, 3.12, 3.13, and 3.14.
 
 ## 4. Coding Style & Patterns
 - **Layering:** Follow the inheritance chain: `base` -> `python` -> `terminal` -> `webterm` -> `opencode`.
