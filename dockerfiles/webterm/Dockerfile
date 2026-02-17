@@ -1,5 +1,5 @@
 # Layer 4: Web Terminal (ttyd)
-FROM images.canfar.net/cadc/terminal:26.02
+FROM images.canfar.net/cadc/terminal
 
 LABEL description="CANFAR Web-based Terminal Environment"
 

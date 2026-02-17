@@ -16,11 +16,10 @@ You are a Cloud Systems Engineer specializing in Docker containerization for the
 Images must be built and pushed in sequence to maintain the dependency chain.
 
 ### Build Sequence (Release 26.02)
-1. **Base:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/base:26.02 ./dockerfiles/base/`
-2. **Python:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/python:26.02 ./dockerfiles/python/`
-3. **Terminal:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/terminal:26.02 ./dockerfiles/terminal/`
-4. **Webterm:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/webterm:26.02 ./dockerfiles/webterm/`
-5. **AI Terminal:** `docker build --platform linux/amd64 -t images.canfar.net/cadc/webterm-opencode:26.02 ./dockerfiles/opencode/`
+Use the `build.sh` script to maintain the dependency chain:
+- **Full Build:** `./build.sh all`
+- **Partial Build:** `./build.sh <layer_name>` (e.g., `./build.sh python` will build python and all subsequent layers)
+- **Pushing:** Add the `--push` flag to any command.
 
 ## 4. Coding Style & Patterns
 - **Layering:** Follow the inheritance chain: `base` -> `python` -> `terminal` -> `webterm` -> `opencode`.

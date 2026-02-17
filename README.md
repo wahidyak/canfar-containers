@@ -48,19 +48,18 @@ The images follow a strictly layered model to ensure consistency and reproducibi
 
 To maintain the dependency chain, images must be built and pushed in sequence using the `26.02` version tag.
 
-**One-Line Build & Push:**
+**Automated Build & Push:**
+Use the provided `build.sh` script to build the entire stack or a specific layer (and its dependencies) in the correct order.
+
 ```bash
-docker login images.canfar.net && \
-docker build --rm --platform linux/amd64 -t images.canfar.net/cadc/base:26.02 ./dockerfiles/base/ && \
-docker push images.canfar.net/cadc/base:26.02 && \
-docker build --rm --platform linux/amd64 -t images.canfar.net/cadc/python:26.02 ./dockerfiles/python/ && \
-docker push images.canfar.net/cadc/python:26.02 && \
-docker build --rm --platform linux/amd64 -t images.canfar.net/cadc/terminal:26.02 ./dockerfiles/terminal/ && \
-docker push images.canfar.net/cadc/terminal:26.02 && \
-docker build --rm --platform linux/amd64 -t images.canfar.net/cadc/webterm:26.02 ./dockerfiles/webterm/ && \
-docker push images.canfar.net/cadc/webterm:26.02 && \
-docker build --rm --platform linux/amd64 -t images.canfar.net/cadc/webterm-opencode:26.02 ./dockerfiles/opencode/ && \
-docker push images.canfar.net/cadc/webterm-opencode:26.02
+# Build all images in sequence
+./build.sh all
+
+# Build from a specific layer onwards (e.g., python, terminal, etc.)
+./build.sh python
+
+# Build and automatically push to the registry
+./build.sh all --push
 ```
 
 ## Maintenance

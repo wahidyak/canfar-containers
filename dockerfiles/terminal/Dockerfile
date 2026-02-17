@@ -1,5 +1,5 @@
 # Layer 3: Interactive Terminal (CLI Environment)
-FROM images.canfar.net/cadc/python:3.12-26.02
+FROM images.canfar.net/cadc/python:3.12
 
 LABEL description="Standard CANFAR Terminal CLI Environment"
 

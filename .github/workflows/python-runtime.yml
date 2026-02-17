@@ -57,10 +57,9 @@ jobs:
         with:
           context: ./dockerfiles/python/${{ matrix.version }}
           push: true
-          # Tagging follows the <python-version>-26.02 convention
-          # Note: No 'latest' tag is used to stay compliant with agent.md
+          # Tagging follows the <python-version> convention
           tags: |
-            images.canfar.net/cadc/python:${{ matrix.version }}-26.02
+            images.canfar.net/cadc/python:${{ matrix.version }}
           # Uses GitHub Actions cache to make subsequent builds much faster
           cache-from: type=gha
           cache-to: type=gha,mode=max
