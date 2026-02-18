@@ -4,31 +4,31 @@ This repository contains the layered Dockerfile definitions for the CANFAR conta
 
 ## Project Structure
 
-The project is organized into a 5-layer hierarchy to provide a clear separation between the base foundation, language runtimes, and specialized application layers:
+The project is organized to provide a clear separation between the base foundation, language runtimes, and specialized application layers. Note that the Python stack and the Ubuntu base are independent foundations:
 
 ```
 canfar-containers/
 ├── README.md           # Main documentation
 ├── .gitignore          # Git exclusion rules
 └── dockerfiles/        # Container definitions
-    ├── base/           # Layer 1: Minimal OS foundation
-    ├── python/         # Layer 2: Python Runtime (Mamba, UV, Pixi)
-    ├── terminal/       # Layer 3: Interactive CLI environment (Starship)
-    ├── webterm/        # Layer 4: Web-based terminal (ttyd)
-    └── opencode/       # Layer 5: AI-enhanced terminal (OpenCode AI)
+    ├── base/           # Ubuntu Foundation (Generic)
+    ├── python/         # Python Foundation (Official Slim)
+    ├── terminal/       # Interactive CLI environment (Starship)
+    ├── webterm/        # Web-based terminal (ttyd)
+    └── opencode/       # AI-enhanced terminal (OpenCode AI)
 ```
 
 ## Architecture
 
-The images follow a strictly layered model to ensure consistency and reproducibility. All images are hosted at `images.canfar.net/cadc/`.
+The images follow a modular layered model. All images are hosted at `images.canfar.net/cadc/`.
 
 1. **Base Image (`base`)**: 
    - **OS**: Ubuntu 24.04 LTS (Pinned by digest)
-   - **Status**: Minimal system foundation with essential utilities (`curl`, `git`, `vim`, etc.).
+   - **Status**: Standalone system foundation with essential utilities (`curl`, `git`, `vim`, etc.).
 
 2. **Python Image (`python`)**:
-   - **Inherits**: `base`
-   - **Runtime**: Python 3.12, Micromamba
+   - **Inherits**: `python:slim` (Official Docker Hub)
+   - **Runtime**: Python 3.10–3.14
    - **Managers**: `uv`, `pixi`, `pip-tools`
 
 3. **Terminal Image (`terminal`)**:

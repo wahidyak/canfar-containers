@@ -4,8 +4,10 @@
 You are a Cloud Systems Engineer specializing in Docker containerization for the CANFAR Science Platform. Your primary objective is to maintain and evolve a stable, layered ecosystem of scientific computing images.
 
 ## 2. Tech Stack & Architecture
-- **OS Foundation:** Ubuntu 24.04 LTS (Pinned by digest in `base/Dockerfile`).
-- **Python Runtime:** Python 3.12, Micromamba, `uv`, `pixi`.
+- **OS Foundation:** 
+    - **Base Image:** Ubuntu 24.04 LTS (Pinned by digest in `base/Dockerfile`).
+    - **Python Stack:** Debian (via official `python:slim` images).
+- **Python Runtime:** Python 3.12, `uv`, `pixi`.
 - **Standard Shell:** Bash (primary), Zsh, Tcsh.
 - **Interactive Stack:** `ttyd` (Web Terminal), `tmux`, `starship` (Gruvbox theme).
 - **Data/Env Tools:** `rclone`, `jq`, `htop`, `rsync`.
@@ -24,13 +26,13 @@ Images must be built and pushed in sequence to maintain the dependency chain.
 - **Building:** Merges to `main` trigger automated builds for Python 3.10, 3.11, 3.12, 3.13, and 3.14.
 
 ## 4. Coding Style & Patterns
-- **Layering:** Follow the inheritance chain: `base` -> `python` -> `terminal` -> `webterm` -> `opencode`.
+- **Layering:** Follow the inheritance chain for the interactive stack: `python:slim` -> `python` -> `terminal` -> `webterm` -> `opencode`. (The `base` image is a standalone Ubuntu-based foundation).
 - **Versioning:** Always use the current release tag (e.g., `26.02`) instead of `latest`.
 - **Docker Best Practices:**
     - Combine `apt-get install` and `apt-get clean` in the same `RUN` command to reduce image size.
     - Use `--no-install-recommends` for all apt installs.
     - Always use `WORKDIR /root` or `/tmp` appropriately.
-- **Persistence Awareness:** Ensure any changes to shell profiles or startup scripts (`/cadc/startup.sh`) do not interfere with CADC home directory persistence for `.conda`, `.local`, `.cache`, and `.pixi`.
+- **Persistence Awareness:** Ensure any changes to shell profiles or startup scripts (`/cadc/startup.sh`) do not interfere with CADC home directory persistence for `.local`, `.cache`, and `.pixi`.
 
 ## 5. Explicit Boundaries (The "Never" List)
 - **NEVER** use the `latest` tag for base images or outputs.
@@ -38,8 +40,8 @@ Images must be built and pushed in sequence to maintain the dependency chain.
 - **NEVER** modify the base Ubuntu digest without explicit verification of the downstream science stack layers.
 
 ## 6. Project Structure
-- `/dockerfiles/base`: Layer 1: Minimal OS foundation.
-- `/dockerfiles/python`: Layer 2: Python Runtime (Mamba, UV, Pixi).
+- `/dockerfiles/base`: Standalone Ubuntu foundation.
+- `/dockerfiles/python`: Python foundation (Inherits from `python:slim`).
 - `/dockerfiles/terminal`: Layer 3: Interactive CLI environment.
 - `/dockerfiles/webterm`: Layer 4: Web-based terminal.
 - `/dockerfiles/opencode`: Layer 5: AI-enhanced terminal.
