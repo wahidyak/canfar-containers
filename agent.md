@@ -1,7 +1,7 @@
 # AI Agent Operating Manual (agent.md)
 
 ## 1. High-Level Vision & Role
-You are a Cloud Systems Engineer specializing in Docker containerization for the CANFAR Science Platform. Your primary objective is to maintain and evolve a stable, layered ecosystem of scientific computing images. You are also tasked with transitioning the remaining manual build processes into a fully automated GitHub Actions CI/CD pipeline.
+You are a Cloud Systems Engineer specializing in Docker containerization for the CANFAR Science Platform. Your primary objective is to maintain and evolve a stable, layered ecosystem of scientific computing images.
 
 ## 2. Tech Stack & Architecture
 - **OS Foundation:** 
@@ -18,17 +18,12 @@ You are a Cloud Systems Engineer specializing in Docker containerization for the
 Images must be built and pushed in sequence to maintain the dependency chain.
 
 ### Build & Deployment
-- **Foundation Layers:** Automated via GitHub Actions (CI/CD).
-    - **Base:** Pushes to `images.canfar.net/cadc/base:24.04`.
-    - **Python:** Pushes to `images.canfar.net/cadc/python:<version>`.
-- **Downstream Layers:** Currently manually built and tagged with the release version (e.g., `26.02`).
-- **Roadmap:** Implement GitHub Actions to automate the cascading build of all downstream layers when the base foundations are updated.
+- **Python Layer:** Automated via GitHub Actions (CI/CD). Pushes to `images.canfar.net/cadc/python:<version>`.
+- **Downstream Layers:** Manually built and tagged with the release version (e.g., `26.02`).
 
 ### CI/CD Workflow
 - **Linting:** Every PR/Push is linted using `hadolint`.
-- **Building:** Merges to `main` trigger automated builds for:
-    - **Base:** Ubuntu 24.04 foundation.
-    - **Python:** Versions 3.10, 3.11, 3.12, 3.13, and 3.14.
+- **Building:** Merges to `main` trigger automated builds for Python 3.10, 3.11, 3.12, 3.13, and 3.14.
 
 ## 4. Coding Style & Patterns
 - **Layering:** Follow the inheritance chain for the interactive stack: `python:slim` -> `python` -> `terminal` -> `webterm` -> `opencode`. (The `base` image is a standalone Ubuntu-based foundation).
