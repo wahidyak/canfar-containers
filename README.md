@@ -48,8 +48,8 @@ The images follow a modular layered model. All images are hosted at `images.canf
 
 The project is transitioning toward a full CI/CD automation model for the entire stack.
 
-**Phase 1: Automated Python Build (Current)**
-Python images (3.10–3.14) are automatically built, linted, and pushed to the registry upon merging to the `main` branch.
+**Phase 1: Automated Foundation Builds (Current)**
+Base and Python images (3.10–3.14) are automatically built, linted, and pushed to the registry upon merging to the `main` branch.
 
 **Phase 2: Full Stack Automation (Roadmap)**
 We are moving toward GitHub Actions automation for the entire dependency chain (Base -> Python -> Terminal -> Webterm -> Opencode). This will eliminate manual builds and ensure all layers are synchronized with the latest security updates and releases.

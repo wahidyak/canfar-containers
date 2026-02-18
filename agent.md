@@ -18,13 +18,17 @@ You are a Cloud Systems Engineer specializing in Docker containerization for the
 Images must be built and pushed in sequence to maintain the dependency chain.
 
 ### Build & Deployment
-- **Python Layer:** Automated via GitHub Actions (CI/CD). Pushes to `images.canfar.net/cadc/python:<version>`.
+- **Foundation Layers:** Automated via GitHub Actions (CI/CD).
+    - **Base:** Pushes to `images.canfar.net/cadc/base:24.04`.
+    - **Python:** Pushes to `images.canfar.net/cadc/python:<version>`.
 - **Downstream Layers:** Currently manually built and tagged with the release version (e.g., `26.02`).
 - **Roadmap:** Implement GitHub Actions to automate the cascading build of all downstream layers when the base foundations are updated.
 
 ### CI/CD Workflow
 - **Linting:** Every PR/Push is linted using `hadolint`.
-- **Building:** Merges to `main` trigger automated builds for Python 3.10, 3.11, 3.12, 3.13, and 3.14.
+- **Building:** Merges to `main` trigger automated builds for:
+    - **Base:** Ubuntu 24.04 foundation.
+    - **Python:** Versions 3.10, 3.11, 3.12, 3.13, and 3.14.
 
 ## 4. Coding Style & Patterns
 - **Layering:** Follow the inheritance chain for the interactive stack: `python:slim` -> `python` -> `terminal` -> `webterm` -> `opencode`. (The `base` image is a standalone Ubuntu-based foundation).
