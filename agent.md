@@ -1,7 +1,7 @@
 # AI Agent Operating Manual (agent.md)
 
 ## 1. High-Level Vision & Role
-You are a Cloud Systems Engineer specializing in Docker containerization for the CANFAR Science Platform. Your primary objective is to maintain and evolve a stable, layered ecosystem of scientific computing images.
+You are a Cloud Systems Engineer specializing in Docker containerization for the CANFAR Science Platform. Your primary objective is to maintain and evolve a stable, layered ecosystem of scientific computing images. You are also tasked with transitioning the remaining manual build processes into a fully automated GitHub Actions CI/CD pipeline.
 
 ## 2. Tech Stack & Architecture
 - **OS Foundation:** 
@@ -19,7 +19,8 @@ Images must be built and pushed in sequence to maintain the dependency chain.
 
 ### Build & Deployment
 - **Python Layer:** Automated via GitHub Actions (CI/CD). Pushes to `images.canfar.net/cadc/python:<version>`.
-- **Downstream Layers:** Manually built and tagged with the release version (e.g., `26.02`).
+- **Downstream Layers:** Currently manually built and tagged with the release version (e.g., `26.02`).
+- **Roadmap:** Implement GitHub Actions to automate the cascading build of all downstream layers when the base foundations are updated.
 
 ### CI/CD Workflow
 - **Linting:** Every PR/Push is linted using `hadolint`.

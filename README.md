@@ -46,13 +46,16 @@ The images follow a modular layered model. All images are hosted at `images.canf
 
 ## Build & Deployment
 
-To maintain the dependency chain, images are built using a hybrid model: Python images are automated via CI/CD, while downstream layers use the `26.02` version tag.
+The project is transitioning toward a full CI/CD automation model for the entire stack.
 
-**Automated Python Build:**
-Python images (3.10–3.14) are automatically built and pushed to the registry upon pushing to the `main` branch.
+**Phase 1: Automated Python Build (Current)**
+Python images (3.10–3.14) are automatically built, linted, and pushed to the registry upon merging to the `main` branch.
 
-**Manual Downstream Build:**
-Until automated, downstream layers can be built manually:
+**Phase 2: Full Stack Automation (Roadmap)**
+We are moving toward GitHub Actions automation for the entire dependency chain (Base -> Python -> Terminal -> Webterm -> Opencode). This will eliminate manual builds and ensure all layers are synchronized with the latest security updates and releases.
+
+**Manual Downstream Build (Interim):**
+Until full automation is complete, downstream layers can be built manually using the current release tag:
 ```bash
 docker build -t images.canfar.net/cadc/terminal:26.02 ./dockerfiles/terminal/
 docker push images.canfar.net/cadc/terminal:26.02
