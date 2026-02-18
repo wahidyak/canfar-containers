@@ -29,7 +29,7 @@ The images follow a modular layered model. All images are hosted at `images.canf
 2. **Python Image (`python`)**:
    - **Inherits**: `python:slim` (Official Docker Hub)
    - **Runtime**: Python 3.10–3.14
-   - **Managers**: `uv`, `pixi`, `pip-tools`
+   - **Managers**: `uv`, `pixi`
 
 3. **Terminal Image (`terminal`)**:
    - **Inherits**: `python`
