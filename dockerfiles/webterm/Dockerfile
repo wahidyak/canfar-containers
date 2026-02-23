@@ -17,7 +17,7 @@ LABEL description="CANFAR Web-based Terminal Environment" \
       org.opencontainers.image.version="26.02"
 
 # Prepare specialized directories
-RUN mkdir -p /skaha
+RUN mkdir -p /cadc
 
 # Package Versions (Tracked by Renovate)
 # renovate: datasource=repology depName=debian_trixie/emacs-nox versioning=deb
@@ -75,7 +75,7 @@ RUN (ttyd --port 7681 /bin/bash &) \
     && LINE=$(grep -n "</head>" /tmp/orig_index.html | cut -f1 -d:) \
     && head -n "$((LINE-1))" /tmp/orig_index.html > /tmp/head.html \
     && tail -n "+${LINE}" /tmp/orig_index.html > /tmp/tail.html \
-    && cat /tmp/head.html /tmp/font_style.css /tmp/tail.html > /skaha/index.html \
+    && cat /tmp/head.html /tmp/font_style.css /tmp/tail.html > /cadc/index.html \
     && rm /tmp/orig_index.html /tmp/font_style.css /tmp/head.html /tmp/tail.html
 
 # Install Starship Prompt
@@ -100,9 +100,9 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
 
 # Startup Script (Modified for persistence and user home directory)
 # hadolint ignore=SC2016
-RUN printf "#!/bin/bash\n# Ensure persistent directories exist\nmkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\nttyd --writable --port 5000 --index /skaha/index.html -w \"\${HOME}\" -t fontFamily=\"Hack Nerd Font\" -t titleFixed=\"CANFAR Webterm\" /bin/bash -l\n" > /skaha/startup.sh \
-    && chmod +x /skaha/startup.sh
+RUN printf "#!/bin/bash\n# Ensure persistent directories exist\nmkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\nttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" -t fontFamily=\"Hack Nerd Font\" -t titleFixed=\"CANFAR Webterm\" /bin/bash -l\n" > /cadc/startup.sh \
+    && chmod +x /cadc/startup.sh
 
 EXPOSE 5000
 WORKDIR /tmp
-CMD ["/skaha/startup.sh"]
+CMD ["/cadc/startup.sh"]
