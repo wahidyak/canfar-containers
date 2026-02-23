@@ -65,13 +65,13 @@ RUN mkdir -p /usr/local/share/fonts/hack \
     && rm /tmp/hack.zip \
     && fc-cache -fv
 
-# Create custom ttyd index by patching the default one with embedded font
+# Create custom ttyd index by patching the default one with embedded font and Safari spacing fixes
 RUN (ttyd --port 7681 /bin/bash &) \
     && for _ in {1..10}; do if curl -s http://localhost:7681 > /tmp/orig_index.html; then break; fi; sleep 1; done \
     && pkill -f ttyd \
-    && echo "<style>@font-face { font-family: 'Hack Nerd Font'; src: url('data:font/ttf;base64," > /tmp/font_style.css \
+    && printf "<style>\n@font-face { font-family: 'Hack Nerd Font'; src: url('data:font/ttf;base64," > /tmp/font_style.css \
     && base64 /usr/local/share/fonts/hack/HackNerdFont-Regular.ttf >> /tmp/font_style.css \
-    && echo "') format('truetype'); }</style>" >> /tmp/font_style.css \
+    && printf "') format('truetype'); font-display: block; }\nbody { font-family: 'Hack Nerd Font', monospace; font-variant-ligatures: none; font-feature-settings: 'liga' 0; }\n</style>\n" >> /tmp/font_style.css \
     && LINE=$(grep -n "</head>" /tmp/orig_index.html | cut -f1 -d:) \
     && head -n "$((LINE-1))" /tmp/orig_index.html > /tmp/head.html \
     && tail -n "+${LINE}" /tmp/orig_index.html > /tmp/tail.html \
@@ -100,7 +100,7 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
 
 # Startup Script (Modified for persistence and user home directory)
 # hadolint ignore=SC2016
-RUN printf "#!/bin/bash\n# Ensure persistent directories exist\nmkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\nttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" -t fontFamily=\"Hack Nerd Font\" -t titleFixed=\"CANFAR Webterm\" /bin/bash -l\n" > /cadc/startup.sh \
+RUN printf "#!/bin/bash\n# Ensure persistent directories exist\nmkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\nttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" -t fontFamily=\"'Hack Nerd Font', monospace\" -t letterSpacing=0 -t lineHeight=1.1 -t titleFixed=\"CANFAR Webterm\" /bin/bash -l\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 EXPOSE 5000
