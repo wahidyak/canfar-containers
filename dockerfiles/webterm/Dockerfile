@@ -71,7 +71,7 @@ RUN (ttyd --port 7681 /bin/bash &) \
     && pkill -f ttyd \
     && printf "<style>\n@font-face { font-family: 'Hack Nerd Font'; src: url('data:font/ttf;base64," > /tmp/font_style.css \
     && base64 /usr/local/share/fonts/hack/HackNerdFont-Regular.ttf >> /tmp/font_style.css \
-    && printf "') format('truetype'); font-display: block; }\nbody { font-family: 'Hack Nerd Font', monospace; font-variant-ligatures: none; font-feature-settings: 'liga' 0; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }\n.xterm-rows { letter-spacing: normal !important; }\n</style>\n" >> /tmp/font_style.css \
+    && printf "') format('truetype'); font-display: block; }\nbody { font-family: 'Hack Nerd Font', monospace; font-variant-ligatures: none; font-feature-settings: 'liga' 0; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }\n.xterm .xterm-content, .xterm-rows, .xterm-rows > div { letter-spacing: 0px !important; font-variant-ligatures: none !important; white-space: pre !important; }\n</style>\n" >> /tmp/font_style.css \
     && LINE=$(grep -n "</head>" /tmp/orig_index.html | cut -f1 -d:) \
     && head -n "$((LINE-1))" /tmp/orig_index.html > /tmp/head.html \
     && tail -n "+${LINE}" /tmp/orig_index.html > /tmp/tail.html \
@@ -100,7 +100,7 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
 
 # Startup Script (Modified for persistence and user home directory)
 # hadolint ignore=SC2016
-RUN printf "#!/bin/bash\n# Ensure persistent directories exist\nmkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\nttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" -t fontFamily=\"'Hack Nerd Font', monospace\" -t letterSpacing=-0.5 -t lineHeight=1.2 -t theme='{\"background\": \"#282828\"}' -t titleFixed=\"CANFAR Webterm\" /bin/bash -l\n" > /cadc/startup.sh \
+RUN printf "#!/bin/bash\n# Ensure persistent directories exist\nmkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\nttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" -t fontFamily=\"'Hack Nerd Font', monospace\" -t rendererType=dom -t letterSpacing=0 -t lineHeight=1.1 -t theme='{\"background\": \"#282828\"}' -t titleFixed=\"CANFAR Webterm\" /bin/bash -l\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 EXPOSE 5000
