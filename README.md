@@ -4,59 +4,53 @@ This repository contains the layered Dockerfile definitions for the CANFAR conta
 
 ## Project Structure
 
-The project is organized to provide a clear separation between the base foundation, language runtimes, and specialized application layers. Note that the Python stack and the Ubuntu base are independent foundations:
+The project is organized to provide a clear separation between the language runtimes and specialized application layers:
 
 ```
 canfar-containers/
 ├── README.md           # Main documentation
 ├── .gitignore          # Git exclusion rules
+├── archive/            # Retired/Legacy image definitions
 └── dockerfiles/        # Container definitions
-    ├── base/           # Ubuntu Foundation (Generic)
     ├── python/         # Python Foundation (Official Slim)
-    ├── terminal/       # Interactive CLI environment (Starship)
-    ├── webterm/        # Web-based terminal (ttyd)
-    └── opencode/       # AI-enhanced terminal (OpenCode AI)
+    ├── terminal/       # Interactive CLI environment
+    ├── webterm/        # Web-based terminal (ttyd + Starship + OpenCode AI)
 ```
 
 ## Architecture
 
 The images follow a modular layered model. All images are hosted at `images.canfar.net/cadc/`.
 
-1. **Base Image (`base`)**: 
-   - **OS**: Ubuntu 24.04 LTS (Pinned by digest)
-   - **Status**: Standalone system foundation with essential utilities (`curl`, `git`, `vim`, etc.).
-
-2. **Python Image (`python`)**:
+1. **Python Image (`python`)**:
    - **Inherits**: `python:slim` (Official Docker Hub)
    - **Runtime**: Python 3.10–3.14
    - **Managers**: `uv`, `pixi`
 
-3. **Terminal Image (`terminal`)**:
+2. **Terminal Image (`terminal`)**:
    - **Inherits**: `python`
-   - **Shell**: Starship prompt (Gruvbox theme), customized aliases
-   - **Utilities**: `rclone`, `jq`, `htop`, `tmux`, `rsync`
+   - **Shell**: Customized bash aliases and completion
+   - **Utilities**: `git`, `htop`, `acl`, `bash-completion`
 
-4. **Webterm Image (`webterm`)**:
+3. **Webterm Image (`webterm`)**:
    - **Inherits**: `terminal`
    - **UI**: `ttyd` (Web Terminal) on port 5000
-
-5. **Opencode Image (`webterm-opencode`)**: 
-   - **Inherits**: `webterm`
+   - **Shell**: Starship prompt (Gruvbox theme)
+   - **Editors**: `vim`, `emacs`, `nano`, `tmux`
    - **AI**: Integrated **OpenCode AI** CLI (`oc` alias)
 
 ## Build & Deployment
 
-To maintain the dependency chain, images are built using a hybrid model: Python images are automated via CI/CD, while downstream layers use the `26.02` version tag.
+The entire image stack is automated via GitHub Actions. The pipeline maintains a strict dependency chain:
 
-**Automated Python Build:**
-Python images (3.10–3.14) are automatically built and pushed to the registry upon pushing to the `main` branch.
+1. **Python Layer**: Builds versions 3.10–3.14.
+2. **Terminal Layer**: Inherits from Python 3.12.
+3. **Webterm Layer**: Inherits from Terminal.
 
-**Manual Downstream Build:**
-Until automated, downstream layers can be built manually:
-```bash
-docker build -t images.canfar.net/cadc/terminal:26.02 ./dockerfiles/terminal/
-docker push images.canfar.net/cadc/terminal:26.02
-```
+**Release Tagging:**
+The downstream images (`terminal`, `webterm`) are tagged with the current release version (e.g., `26.02`).
+
+**Manual Trigger:**
+While automated on push to `main`, the workflow can also be triggered manually via GitHub's "Actions" tab.
 
 ## Maintenance
 

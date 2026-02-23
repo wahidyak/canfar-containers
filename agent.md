@@ -4,13 +4,11 @@
 You are a Cloud Systems Engineer specializing in Docker containerization for the CANFAR Science Platform. Your primary objective is to maintain and evolve a stable, layered ecosystem of scientific computing images.
 
 ## 2. Tech Stack & Architecture
-- **OS Foundation:** 
-    - **Base Image:** Ubuntu 24.04 LTS (Pinned by digest in `base/Dockerfile`).
-    - **Python Stack:** Debian (via official `python:slim` images).
+- **OS Foundation:** Debian (via official `python:slim` images).
 - **Python Runtime:** Python 3.12, `uv`, `pixi`.
-- **Standard Shell:** Bash (primary), Zsh, Tcsh.
-- **Interactive Stack:** `ttyd` (Web Terminal), `tmux`, `starship` (Gruvbox theme).
-- **Data/Env Tools:** `rclone`, `jq`, `htop`, `rsync`.
+- **Standard Shell:** Bash only (Zsh/Tcsh support deprecated).
+- **Interactive Stack:** `ttyd` (Web Terminal), `starship` (Gruvbox theme), `tmux`, `vim`, `emacs`.
+- **Data/Env Tools:** `htop`, `rsync`, `git`, `acl`.
 - **AI Integration:** OpenCode AI (accessible via `oc` or `opencode`).
 - **Image Registry:** `images.canfar.net/cadc/`
 
@@ -26,7 +24,7 @@ Images must be built and pushed in sequence to maintain the dependency chain.
 - **Building:** Merges to `main` trigger automated builds for Python 3.10, 3.11, 3.12, 3.13, and 3.14.
 
 ## 4. Coding Style & Patterns
-- **Layering:** Follow the inheritance chain for the interactive stack: `python:slim` -> `python` -> `terminal` -> `webterm` -> `opencode`. (The `base` image is a standalone Ubuntu-based foundation).
+- **Layering:** Follow the inheritance chain for the interactive stack: `python:slim` -> `python` -> `terminal` -> `webterm` (includes OpenCode).
 - **Versioning:** Always use the current release tag (e.g., `26.02`) instead of `latest`.
 - **Docker Best Practices:**
     - Combine `apt-get install` and `apt-get clean` in the same `RUN` command to reduce image size.
@@ -40,9 +38,8 @@ Images must be built and pushed in sequence to maintain the dependency chain.
 - **NEVER** modify the base Ubuntu digest without explicit verification of the downstream science stack layers.
 
 ## 6. Project Structure
-- `/dockerfiles/base`: Standalone Ubuntu foundation.
+- `/archive/base`: Archived Ubuntu foundation.
 - `/dockerfiles/python`: Python foundation (Inherits from `python:slim`).
 - `/dockerfiles/terminal`: Layer 3: Interactive CLI environment.
-- `/dockerfiles/webterm`: Layer 4: Web-based terminal.
-- `/dockerfiles/opencode`: Layer 5: AI-enhanced terminal.
+- `/dockerfiles/webterm`: Layer 4: Web-based terminal (includes OpenCode AI).
 - `/doc`: Project documentation.
