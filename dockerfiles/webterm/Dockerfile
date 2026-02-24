@@ -72,6 +72,7 @@ RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes --version ${STARSHI
     && /usr/local/bin/starship init bash --print-full-init >> /etc/profile.d/terminal.sh
 
 # Starship Gruvbox Material Configuration (Optimized Palette)
+# hadolint ignore=SC2016
 RUN printf 'scan_timeout = 1000\ncommand_timeout = 1000\npalette = "gruvbox"\n\n[palettes.gruvbox]\nbg0 = "#282828"\nbg1 = "#3c3836"\nfg0 = "#fbf1c7"\nyellow = "#fabd2f"\naqua = "#8ec07c"\ngreen = "#b8bb26"\nred = "#fb4934"\n\n[username]\nshow_always = true\nstyle_user = "bg:yellow fg:bg0"\nstyle_root = "bg:red fg:bg0"\nformat = "[  $user ]($style)"\n\n[directory]\nstyle = "bg:aqua fg:bg0"\nformat = "[  $path ]($style)"\ntruncation_length = 0\ntruncate_to_repo = false\n\n[git_branch]\nsymbol = " "\nstyle = "bg:green fg:bg0"\nformat = "[ $symbol$branch ]($style)"\n\n[git_status]\ndisabled = false\nformat = "([$all_status$ahead_behind]($style) )"\nstaged = " "\nmodified = "󰏬 "\ndeleted = " "\nrenamed = "󰁔 "\nuntracked = " "\n\n[python]\nsymbol = " "\n\n[container]\ndisabled = true\n\n[character]\nsuccess_symbol = "[ 󰆍 > ](bold green)"\nerror_symbol = "[ 󰆍 x ](bold red)"\n' > /etc/starship.toml
 ENV STARSHIP_CONFIG=/etc/starship.toml
 
@@ -84,6 +85,7 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
     && echo 'alias oc="opencode"' >> /etc/profile.d/terminal.sh
 
 # Updated Startup Script with Atlas Disable and letterSpacing override
+# hadolint ignore=SC2016
 RUN printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
 ttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" \
