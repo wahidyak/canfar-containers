@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Layer 4: Web Terminal (ttyd)
+# Layer 4: Web Terminal (ttyd) - Safari Fix Edition
 
 ARG REGISTRY=images.canfar.net
 ARG BASE_TAG=26.02
@@ -50,7 +50,7 @@ RUN mkdir -p /usr/local/share/fonts/hack \
     && rm /tmp/hack.zip \
     && fc-cache -fv
 
-# Create custom ttyd index with "Safari-proof" CSS and Glyph overrides
+# Patch ttyd index.html with "Nuclear" CSS for Safari spacing and glyphs
 RUN (ttyd --port 7681 /bin/bash &) \
     && for _ in {1..10}; do if curl -s http://localhost:7681 > /tmp/orig_index.html; then break; fi; sleep 1; done \
     && pkill -f ttyd \
@@ -58,8 +58,8 @@ RUN (ttyd --port 7681 /bin/bash &) \
     && base64 /usr/local/share/fonts/hack/HackNerdFontMono-Regular.ttf >> /tmp/font_style.css \
     && printf "') format('truetype'); font-display: block; }\n" >> /tmp/font_style.css \
     && printf "body { font-family: 'Hack Nerd Font Mono', monospace !important; }\n" >> /tmp/font_style.css \
-    && printf ".xterm-rows { letter-spacing: -1px !important; font-variant-ligatures: none !important; }\n" >> /tmp/font_style.css \
-    && printf ".xterm-normal-char, .xterm-rows span, .xterm-rows div { font-family: 'Hack Nerd Font Mono' !important; }\n</style>\n" >> /tmp/font_style.css \
+    && printf ".xterm-rows { letter-spacing: -1px !important; }\n" >> /tmp/font_style.css \
+    && printf ".xterm-normal-char, .xterm-rows span, .xterm-rows div { font-family: 'Hack Nerd Font Mono' !important; display: inline-block !important; width: 1ch !important; text-align: center !important; }\n</style>\n" >> /tmp/font_style.css \
     && LINE=$(grep -n "</head>" /tmp/orig_index.html | cut -f1 -d:) \
     && head -n "$((LINE-1))" /tmp/orig_index.html > /tmp/head.html \
     && tail -n "+${LINE}" /tmp/orig_index.html > /tmp/tail.html \
@@ -84,7 +84,7 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
     && rm -rf /root/.opencode \
     && echo 'alias oc="opencode"' >> /etc/profile.d/terminal.sh
 
-# Updated Startup Script with Atlas Disable and letterSpacing override
+# Final Startup Script (Forces DOM renderer and collapses spacing)
 # hadolint ignore=SC2016
 RUN printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
@@ -93,9 +93,8 @@ ttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" \
 -t rendererType=dom \
 -t experimentalCharAtlas=\"none\" \
 -t letterSpacing=-1 \
--t lineHeight=1.1 \
 -t theme='{\"background\": \"#282828\"}' \
--t titleFixed=\"CANFAR Webterm\" /bin/bash -l\n" > /cadc/startup.sh \
+/bin/bash -l\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 EXPOSE 5000
