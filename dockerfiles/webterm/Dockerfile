@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Layer 4: Web Terminal (ttyd) - Safari Fix Edition
+# Layer 4: Web Terminal (ttyd) - Edge/Chrome Fix Edition
 
 ARG REGISTRY=images.canfar.net
 ARG BASE_TAG=26.02
@@ -50,17 +50,14 @@ RUN mkdir -p /usr/local/share/fonts/hack \
     && rm /tmp/hack.zip \
     && fc-cache -fv
 
-# Patch ttyd index.html with NO-WRAP Base64 and Safari Spacing Fixes
+# Create custom ttyd index (Fixed with -w 0 for no-wrap Base64)
 RUN (ttyd --port 7681 /bin/bash &) \
     && for _ in {1..10}; do if curl -s http://localhost:7681 > /tmp/orig_index.html; then break; fi; sleep 1; done \
     && pkill -f ttyd \
-    && printf "<style>\n @font-face { font-family: 'HackNerdFontMono'; src: url('data:font/ttf;base64," > /tmp/font_style.css \
+    && printf "<style>\n @font-face { font-family: 'HackNerdFont'; src: url('data:font/ttf;base64," > /tmp/font_style.css \
     && base64 -w 0 /usr/local/share/fonts/hack/HackNerdFontMono-Regular.ttf >> /tmp/font_style.css \
-    && printf "') format('truetype'); font-weight: normal; font-style: normal; }\n" >> /tmp/font_style.css \
-    && printf "body { font-family: 'HackNerdFontMono', monospace !important; }\n" >> /tmp/font_style.css \
-    && printf ".xterm-rows { letter-spacing: -1px !important; }\n" >> /tmp/font_style.css \
-    && printf ".xterm-normal-char, .xterm-rows span, .xterm-rows div { font-family: 'HackNerdFontMono' !important; display: inline-block !important; width: 1ch !important; }\n" >> /tmp/font_style.css \
-    && printf "</style>\n<div style='font-family: HackNerdFontMono; visibility: hidden; position: absolute;'>force-load</div>\n" >> /tmp/font_style.css \
+    && printf "') format('truetype'); }\n" >> /tmp/font_style.css \
+    && printf "body { font-family: 'HackNerdFont', monospace !important; margin: 0; }\n</style>\n" >> /tmp/font_style.css \
     && LINE=$(grep -n "</head>" /tmp/orig_index.html | cut -f1 -d:) \
     && head -n "$((LINE-1))" /tmp/orig_index.html > /tmp/head.html \
     && tail -n "+${LINE}" /tmp/orig_index.html > /tmp/tail.html \
@@ -84,14 +81,16 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
     && chmod +x /usr/local/bin/opencode \
     && echo 'alias oc="opencode"' >> /etc/profile.d/terminal.sh
 
-# Final Startup Script (Forces DOM renderer and collapses spacing)
+# Final Startup Script (Optimized for Edge/Chrome)
 # hadolint ignore=SC2016
 RUN printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
 ttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" \
--t fontFamily=\"HackNerdFontMono\" \
--t rendererType=dom \
--t letterSpacing=-1 \
+-t fontFamily=\"'HackNerdFont', monospace\" \
+-t rendererType=canvas \
+-t letterSpacing=0 \
+-t lineHeight=1.1 \
+-t theme='{\"background\": \"#282828\"}' \
 -t titleFixed=\"CANFAR Webterm\" \
 /bin/bash -l\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
