@@ -37,20 +37,14 @@ ARG VIM_VERSION=2:9.1.1230-2
 # renovate: datasource=repology depName=debian_trixie/procps versioning=deb
 ARG PROCPS_VERSION=2:4.0.4-9
 
-# Install Web Terminal, Fonts, and Interactive Tools (Split for better caching/timeout handling)
+# Install Web Terminal, Fonts, and Interactive Tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     emacs-nox=${EMACS_VERSION} \
     fonts-noto-color-emoji=${FONTS_NOTO_VERSION} \
     fontconfig=${FONTCONFIG_VERSION} \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip=${UNZIP_VERSION} \
     nano=${NANO_VERSION} \
     tmux=${TMUX_VERSION} \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
     vim-nox=${VIM_VERSION} \
     procps=${PROCPS_VERSION} \
     && rm -rf /var/lib/apt/lists/*
@@ -65,20 +59,21 @@ RUN mkdir -p /usr/local/share/fonts/hack \
     && rm /tmp/hack.zip \
     && fc-cache -fv
 
-# Create custom ttyd index with "Safari-proof" Nerd Font settings
+# Create custom ttyd index with "Safari-proof" Nerd Font Mono settings
 RUN (ttyd --port 7681 /bin/bash &) \
     && for _ in {1..10}; do if curl -s http://localhost:7681 > /tmp/orig_index.html; then break; fi; sleep 1; done \
     && pkill -f ttyd \
-    && printf "<style>\n@font-face { font-family: 'Hack Nerd Font'; src: url('data:font/ttf;base64," > /tmp/font_style.css \
-    && base64 /usr/local/share/fonts/hack/HackNerdFont-Regular.ttf >> /tmp/font_style.css \
+    && printf "<style>\n @font-face { font-family: 'Hack Nerd Font Mono'; src: url('data:font/ttf;base64," > /tmp/font_style.css \
+    && base64 /usr/local/share/fonts/hack/HackNerdFontMono-Regular.ttf >> /tmp/font_style.css \
     && printf "') format('truetype'); font-display: block; }\n" >> /tmp/font_style.css \
-    && printf "body { font-family: 'Hack Nerd Font', monospace !important; }\n" >> /tmp/font_style.css \
+    && printf "body { font-family: 'Hack Nerd Font Mono', monospace !important; }\n" >> /tmp/font_style.css \
     && printf ".xterm-rows { letter-spacing: 0px !important; font-variant-ligatures: none !important; }\n" >> /tmp/font_style.css \
-    && printf ".xterm-normal-char { font-family: 'Hack Nerd Font', monospace !important; }\n</style>\n" >> /tmp/font_style.css \
+    && printf ".xterm-normal-char { font-family: 'Hack Nerd Font Mono', monospace !important; display: inline-block !important; width: 1ch !important; }\n</style>\n" >> /tmp/font_style.css \
     && LINE=$(grep -n "</head>" /tmp/orig_index.html | cut -f1 -d:) \
     && head -n "$((LINE-1))" /tmp/orig_index.html > /tmp/head.html \
     && tail -n "+${LINE}" /tmp/orig_index.html > /tmp/tail.html \
-    && cat /tmp/head.html /tmp/font_style.css /tmp/tail.html > /cadc/index.html
+    && cat /tmp/head.html /tmp/font_style.css /tmp/tail.html > /cadc/index.html \
+    && rm /tmp/orig_index.html /tmp/font_style.css /tmp/head.html /tmp/tail.html
 
 # Install Starship Prompt
 # renovate: datasource=github-releases depName=starship/starship
@@ -100,15 +95,16 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
     && rm -rf /root/.opencode \
     && echo 'alias oc="opencode"' >> /etc/profile.d/terminal.sh
 
-# Updated Startup Script with DOM Renderer
+# Updated Startup Script with Mono Font and DOM Renderer
 # hadolint ignore=SC2016
 RUN printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
 ttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" \
--t fontFamily=\"'Hack Nerd Font', monospace\" \
+-t fontFamily=\"'Hack Nerd Font Mono', monospace\" \
 -t rendererType=dom \
 -t letterSpacing=0 \
 -t lineHeight=1.1 \
+-t theme='{\"background\": \"#282828\"}' \
 -t titleFixed=\"CANFAR Webterm\" /bin/bash -l\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
