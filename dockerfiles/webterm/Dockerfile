@@ -84,7 +84,7 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
     && rm -rf /root/.opencode \
     && echo 'alias oc="opencode"' >> /etc/profile.d/terminal.sh
 
-# Final Startup Script (Forces DOM renderer and collapses spacing)
+# Final Startup Script (Forces DOM renderer, collapses spacing, and sets tab title)
 # hadolint ignore=SC2016
 RUN printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
@@ -94,6 +94,7 @@ ttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" \
 -t experimentalCharAtlas=\"none\" \
 -t letterSpacing=-1 \
 -t theme='{\"background\": \"#282828\"}' \
+-t titleFixed=\"CANFAR Webterm\" \
 /bin/bash -l\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
