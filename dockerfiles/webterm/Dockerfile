@@ -27,6 +27,8 @@ ARG NANO_VERSION=8.4-1
 ARG TMUX_VERSION=3.5a-3
 ARG VIM_VERSION=2:9.1.1230-2
 ARG PROCPS_VERSION=2:4.0.4-9
+ARG NODEJS_VERSION=20.19.2+dfsg-1
+ARG NPM_VERSION=9.2.0~ds1-3
 
 # Install Web Terminal, Fonts, and Interactive Tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,6 +40,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tmux=${TMUX_VERSION} \
     vim-nox=${VIM_VERSION} \
     procps=${PROCPS_VERSION} \
+    nodejs=${NODEJS_VERSION} \
+    npm=${NPM_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy ttyd from official image
@@ -85,6 +89,12 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
     && chmod +x /usr/local/bin/opencode \
     && rm -rf /root/.opencode \
     && echo 'alias oc="opencode"' >> /etc/profile.d/terminal.sh
+
+# Install Additional AI CLI Agents (Copilot, Claude, Gemini)
+ARG COPILOT_CLI_VERSION=0.1.36
+ARG CLAUDE_CODE_VERSION=2.1.58
+ARG GEMINI_CLI_VERSION=0.30.0
+RUN npm install -g @githubnext/github-copilot-cli@${COPILOT_CLI_VERSION} @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @google/gemini-cli@${GEMINI_CLI_VERSION}
 
 # Final Startup Script (DOM renderer for reliable font rendering in Safari/Edge)
 # hadolint ignore=SC2016
