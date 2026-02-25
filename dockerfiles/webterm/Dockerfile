@@ -50,16 +50,18 @@ RUN mkdir -p /usr/local/share/fonts/hack \
     && rm /tmp/hack.zip \
     && fc-cache -fv
 
-# Patch ttyd index.html with NO-WRAP Base64 and clean CSS
+# Patch ttyd index.html with NO-WRAP Base64 + "Nuclear" CSS for Safari/Edge spacing
 RUN (ttyd --port 7681 /bin/bash &) \
-    && for _ in {1..10}; do if curl -s http://localhost:7681 > /tmp/orig_index.html; then break; fi; sleep 1; done \
+    && for _ in {1..15}; do if curl -fsS http://localhost:7681 > /tmp/orig_index.html; then break; fi; sleep 1; done \
     && pkill -f "ttyd --port 7681" || true \
-    && printf "<style>\n@font-face { font-family: 'HackNerdFontMono'; src: url('data:font/ttf;base64," > /tmp/font_style.css \
+    && printf "<style>\n @font-face {\n font-family: 'HackNerdFontMono';\n src: url('data:font/ttf;base64," > /tmp/font_style.css \
     && base64 -w 0 /usr/local/share/fonts/hack/HackNerdFontMono-Regular.ttf >> /tmp/font_style.css \
-    && printf "') format('truetype'); font-weight: normal; font-style: normal; }\n" >> /tmp/font_style.css \
-    && printf "body { font-family: 'HackNerdFontMono', monospace !important; margin: 0; padding: 0; overflow: hidden; height: 100vh; }\n" >> /tmp/font_style.css \
-    && printf ".xterm-rows { letter-spacing: 0px !important; }\n" >> /tmp/font_style.css \
-    && printf "</style>\n" >> /tmp/font_style.css \
+    && printf "') format('truetype');\n font-weight: 400;\n font-style: normal;\n}\n" >> /tmp/font_style.css \
+    && printf "html, body { margin: 0; padding: 0; overflow: hidden; height: 100%%; }\n" >> /tmp/font_style.css \
+    && printf "body { font-family: 'HackNerdFontMono', monospace !important; }\n" >> /tmp/font_style.css \
+    && printf ".xterm-rows { letter-spacing: -1px !important; }\n" >> /tmp/font_style.css \
+    && printf ".xterm-normal-char, .xterm-rows span, .xterm-rows div { font-family: 'HackNerdFontMono' !important; display: inline-block !important; width: 1ch !important; text-align: center !important; overflow: hidden !important; }\n" >> /tmp/font_style.css \
+    && printf "</style>\n<div style='font-family: HackNerdFontMono; visibility: hidden; position: absolute;'>force-load</div>\n" >> /tmp/font_style.css \
     && LINE=$(grep -n "</head>" /tmp/orig_index.html | head -n1 | cut -f1 -d:) \
     && head -n "$((LINE-1))" /tmp/orig_index.html > /tmp/head.html \
     && tail -n "+${LINE}" /tmp/orig_index.html > /tmp/tail.html \
@@ -84,15 +86,15 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
     && rm -rf /root/.opencode \
     && echo 'alias oc="opencode"' >> /etc/profile.d/terminal.sh
 
-# Final Startup Script (Forces Canvas renderer and disables Atlas for icon stability)
+# Final Startup Script (Reverted to DOM with strict grid)
 # hadolint ignore=SC2016
 RUN printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
 ttyd --writable --port 5000 --index /cadc/index.html -w \"\${HOME}\" \
 -t fontFamily=\"HackNerdFontMono\" \
--t rendererType=canvas \
+-t rendererType=dom \
 -t experimentalCharAtlas=\"none\" \
--t letterSpacing=0 \
+-t letterSpacing=-1 \
 -t lineHeight=1.1 \
 -t theme='{\"background\": \"#282828\"}' \
 -t titleFixed=\"CANFAR Webterm\" \
