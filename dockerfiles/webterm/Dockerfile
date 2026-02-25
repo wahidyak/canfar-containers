@@ -90,11 +90,16 @@ RUN curl -fsSL https://opencode.ai/install | bash -s -- --version ${OPENCODE_VER
     && rm -rf /root/.opencode \
     && echo 'alias oc="opencode"' >> /etc/profile.d/terminal.sh
 
-# Install Additional AI CLI Agents (Copilot, Claude, Gemini)
+# Install Additional AI CLI Agents (Copilot, Claude, Gemini, Codex)
 ARG COPILOT_CLI_VERSION=0.1.36
 ARG CLAUDE_CODE_VERSION=2.1.58
 ARG GEMINI_CLI_VERSION=0.30.0
-RUN npm install -g @githubnext/github-copilot-cli@${COPILOT_CLI_VERSION} @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @google/gemini-cli@${GEMINI_CLI_VERSION}
+ARG CODEX_CLI_VERSION=0.105.0
+RUN npm install -g \
+    @githubnext/github-copilot-cli@${COPILOT_CLI_VERSION} \
+    @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+    @google/gemini-cli@${GEMINI_CLI_VERSION} \
+    @openai/codex@${CODEX_CLI_VERSION}
 
 # Final Startup Script (DOM renderer for reliable font rendering in Safari/Edge)
 # hadolint ignore=SC2016
