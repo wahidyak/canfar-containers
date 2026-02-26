@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Layer 4: Web Terminal (ttyd) - Safari & Edge Fix Edition
+# Layer 4: Web Terminal (ttyd) - Minimal Edition
 ARG REGISTRY=images.canfar.net
 ARG BASE_TAG=26.02
 # Stage 1: ttyd Binary
@@ -13,8 +13,6 @@ LABEL description="CANFAR Web-based Terminal Environment" \
 RUN mkdir -p /cadc
 # Package Versions
 ARG EMACS_VERSION=1:30.1+1-6
-ARG FONTS_NOTO_VERSION=2.051-0+deb13u1
-ARG FONTCONFIG_VERSION=2.15.0-2.3
 ARG UNZIP_VERSION=6.0-29
 ARG NANO_VERSION=8.4-1
 ARG TMUX_VERSION=3.5a-3
@@ -22,11 +20,9 @@ ARG VIM_VERSION=2:9.1.1230-2
 ARG PROCPS_VERSION=2:4.0.4-9
 ARG NODEJS_VERSION=20.19.2+dfsg-1
 ARG NPM_VERSION=9.2.0~ds1-3
-# Install Web Terminal, Fonts, and Interactive Tools
+# Install Web Terminal and Interactive Tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     emacs-nox=${EMACS_VERSION} \
-    fonts-noto-color-emoji=${FONTS_NOTO_VERSION} \
-    fontconfig=${FONTCONFIG_VERSION} \
     unzip=${UNZIP_VERSION} \
     nano=${NANO_VERSION} \
     tmux=${TMUX_VERSION} \
@@ -41,9 +37,9 @@ COPY --from=ttyd-bin /usr/bin/ttyd /usr/local/bin/ttyd
 ARG STARSHIP_VERSION=v1.24.2
 RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes --version ${STARSHIP_VERSION} \
     && /usr/local/bin/starship init bash --print-full-init >> /etc/profile.d/terminal.sh
-# Starship Gruvbox Config (Enhanced with safe Unicode)
+# Starship Gruvbox Config (Plain text - no Nerd Font icons)
 # hadolint ignore=SC2016
-RUN printf 'scan_timeout = 1000\ncommand_timeout = 1000\npalette = "gruvbox"\n\n[palettes.gruvbox]\nbg0 = "#282828"\nyellow = "#d79921"\naqua = "#689d6a"\ngreen = "#98971a"\nred = "#cc241d"\npurple = "#b16286"\norange = "#d65d0e"\n\n[username]\nshow_always = true\nstyle_user = "bg:yellow fg:bg0"\nstyle_root = "bg:red fg:bg0"\nformat = "[ $user ]($style)"\n\n[directory]\nstyle = "bg:aqua fg:bg0"\nformat = "[ $path ]($style)"\ntruncation_length = 0\ntruncate_to_repo = false\n\n[git_branch]\nsymbol = "λ "\nstyle = "bg:green fg:bg0"\nformat = "[ $symbol$branch ]($style)"\n\n[git_status]\ndisabled = false\nstyle = "bg:green fg:bg0"\nformat = "([$all_status$ahead_behind]($style))"\nstaged = "[+$count](bg:green fg:bg0)"\nmodified = "[~$count](bg:green fg:bg0)"\ndeleted = "[-$count](bg:green fg:bg0)"\nuntracked = "[?$count](bg:green fg:bg0)"\nahead = "[▲$count](bg:green fg:bg0)"\nbehind = "[▼$count](bg:green fg:bg0)"\n\n[cmd_duration]\nmin_time = 2000\nstyle = "bg:orange fg:bg0"\nformat = "[ ⏱ $duration ]($style)"\n\n[time]\ndisabled = false\nstyle = "bg:purple fg:bg0"\nformat = "[ $time ]($style)"\ntime_format = "%%H:%%M"\n\n[python]\nsymbol = "py "\nstyle = "bg:yellow fg:bg0"\nformat = "[ $symbol$version ]($style)"\n\n[nodejs]\nsymbol = "node "\nstyle = "bg:green fg:bg0"\nformat = "[ $symbol$version ]($style)"\n\n[container]\ndisabled = true\n\n[character]\nsuccess_symbol = "[ → ](bold green)"\nerror_symbol = "[ ✗ ](bold red)"\n' > /etc/starship.toml
+RUN printf 'scan_timeout = 1000\ncommand_timeout = 1000\npalette = "gruvbox"\n\n[palettes.gruvbox]\nbg0 = "#282828"\nyellow = "#d79921"\naqua = "#689d6a"\ngreen = "#98971a"\nred = "#cc241d"\n\n[username]\nshow_always = true\nstyle_user = "bg:yellow fg:bg0"\nstyle_root = "bg:red fg:bg0"\nformat = "[ $user ]($style)"\n\n[directory]\nstyle = "bg:aqua fg:bg0"\nformat = "[ $path ]($style)"\ntruncation_length = 0\ntruncate_to_repo = false\n\n[git_branch]\nsymbol = "git:"\nstyle = "bg:green fg:bg0"\nformat = "[ $symbol$branch ]($style)"\n\n[git_status]\ndisabled = true\n\n[container]\ndisabled = true\n\n[character]\nsuccess_symbol = "[ > ](bold green)"\nerror_symbol = "[ x ](bold red)"\n' > /etc/starship.toml
 ENV STARSHIP_CONFIG=/etc/starship.toml
 # Install OpenCode AI
 ARG OPENCODE_VERSION=1.1.63
