@@ -13,8 +13,6 @@ LABEL description="CANFAR Web-based Terminal Environment" \
 RUN mkdir -p /cadc
 # Package Versions
 ARG EMACS_VERSION=1:30.1+1-6
-ARG FONTS_NOTO_VERSION=2.051-0+deb13u1
-ARG FONTCONFIG_VERSION=2.15.0-2.3
 ARG UNZIP_VERSION=6.0-29
 ARG NANO_VERSION=8.4-1
 ARG TMUX_VERSION=3.5a-3
@@ -25,8 +23,6 @@ ARG NPM_VERSION=9.2.0~ds1-3
 # Install Web Terminal, Fonts, and Interactive Tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     emacs-nox=${EMACS_VERSION} \
-    fonts-noto-color-emoji=${FONTS_NOTO_VERSION} \
-    fontconfig=${FONTCONFIG_VERSION} \
     unzip=${UNZIP_VERSION} \
     nano=${NANO_VERSION} \
     tmux=${TMUX_VERSION} \
