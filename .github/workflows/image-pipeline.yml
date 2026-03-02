@@ -1,23 +1,46 @@
+# CANFAR Container Image Pipeline
+#
+# CI/CD workflow that lints, builds, and pushes the entire CANFAR container
+# stack to the CANFAR Harbor registry (images.canfar.net).
+#
+# Trigger conditions:
+#   - Schedule: 1st of every month at 06:00 UTC (picks up upstream base image updates)
+#   - Push to main: only when Dockerfiles, this workflow, or bake config change
+#   - Pull requests: lint-only (no build/push) when Dockerfiles change
+#   - Manual: via GitHub Actions "Run workflow" button (workflow_dispatch)
+#
+# Job dependency chain: lint -> python (matrix: 3.10-3.14) -> interactive-stack
+# The interactive-stack job uses Docker Bake to build terminal + webterm atomically.
+
 name: CANFAR Container Image Pipeline
 
 on:
+  # Monthly rebuild to pick up upstream security patches and base image updates
+  schedule:
+    - cron: '0 6 1 * *'
+  # On push to main, only rebuild when relevant files change
   push:
     paths:
       - 'dockerfiles/**'
       - '.github/workflows/image-pipeline.yml'
       - 'docker-bake.hcl'
     branches: [main]
+  # On PRs, only lint (push guard below prevents building/pushing)
   pull_request:
     paths:
       - 'dockerfiles/**'
+  # Allow manual trigger from GitHub Actions UI
   workflow_dispatch:
 
+# Global variables shared across all jobs
 env:
   REGISTRY: images.canfar.net
   RELEASE_TAG: "26.02"
 
 jobs:
-  # 0. LINT (Verify Dockerfile standards)
+  # --- Job 0: Lint ---
+  # Runs hadolint on all Dockerfiles to enforce best practices.
+  # Must pass before any builds start.
   lint:
     name: Lint Dockerfiles
     runs-on: ubuntu-24.04
@@ -28,7 +51,11 @@ jobs:
         with:
           recursive: true
 
-  # 1. PYTHON RUNTIME (Matrix build for all supported versions)
+  # --- Job 1: Python Runtime (Matrix Build) ---
+  # Builds the Python foundation images for all supported versions (3.10-3.14).
+  # Each version is built in parallel via the matrix strategy.
+  # Images are pushed to: images.canfar.net/cadc/python:<version>
+  # On PRs: build-only (no push, no registry login).
   python:
     name: Python ${{ matrix.version }}
     needs: lint
@@ -40,8 +67,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      # Only login to registry on push/schedule/dispatch (not PRs)
       - name: Login to CANFAR Registry
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -51,12 +79,17 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./dockerfiles/python/${{ matrix.version }}
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.REGISTRY }}/cadc/python:${{ matrix.version }}
+          # GitHub Actions cache for Docker layers (speeds up rebuilds)
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # 2. INTERACTIVE STACK (Bake ensures layer integrity across Terminal and Webterm)
+  # --- Job 2: Interactive Stack (Bake Build) ---
+  # Builds terminal and webterm together using Docker Bake (docker-bake.hcl).
+  # Bake ensures the terminal image is built first and used as the base for
+  # webterm, maintaining the dependency chain without pushing intermediates.
+  # Waits for both lint and python jobs to complete.
   interactive-stack:
     name: Interactive Stack
     needs: [lint, python]
@@ -66,16 +99,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to CANFAR Registry
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.CANFAR_REGISTRY_USER }}
           password: ${{ secrets.CANFAR_REGISTRY_PASSWORD }}
+      # Bake reads docker-bake.hcl and builds all targets in the default group
       - name: Build and Push (Bake)
         uses: docker/bake-action@v5
         with:
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: ${{ github.event_name != 'pull_request' }}
           set: |
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max

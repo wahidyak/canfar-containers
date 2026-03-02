@@ -1,5 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "_comment": "Renovate Bot config — automatically opens PRs when dependencies have newer versions. Scans '# renovate:' comments in Dockerfiles to track base images (Docker Hub, GHCR) and APT packages (Repology/Debian Trixie). Runs monthly to align with the scheduled CI rebuild.",
   "extends": [
     "config:recommended"
   ],

@@ -1,5 +1,17 @@
 # syntax=docker/dockerfile:1
-# Layer 3: Interactive Terminal (CLI Environment)
+#
+# CANFAR Terminal Image (Layer 2: Interactive CLI Environment)
+#
+# Inherits from the CANFAR Python image and adds essential CLI tools, shell
+# customization (aliases, tab-completion), and UTF-8 locale support. This is
+# the standard interactive environment for CANFAR users who SSH or connect
+# via the science platform.
+#
+# Build chain: python:slim -> python -> THIS IMAGE -> webterm
+#
+# All APT package versions are pinned via ARGs and tracked by Renovate Bot
+# against the Debian Trixie repository for automated monthly updates.
+
 ARG REGISTRY=images.canfar.net
 ARG PYTHON_VERSION=3.12
 FROM ${REGISTRY}/cadc/python:${PYTHON_VERSION}
@@ -9,7 +21,11 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 LABEL description="Standard CANFAR Terminal CLI Environment" \
       org.opencontainers.image.version="26.02"
 
-# Package Versions (Tracked by Renovate)
+# --- Pinned APT Package Versions ---
+# Each ARG has a "# renovate:" comment that tells Renovate Bot how to find
+# newer versions. The datasource is "repology" (a cross-distro package tracker)
+# and the target distro is Debian Trixie (the base of python:slim).
+
 # renovate: datasource=repology depName=debian_trixie/acl versioning=deb
 ARG ACL_VERSION=2.3.2-2+b1
 # renovate: datasource=repology depName=debian_trixie/bash-completion versioning=deb
@@ -27,7 +43,10 @@ ARG LOCALES_VERSION=2.41-12+deb13u1
 # renovate: datasource=repology depName=debian_trixie/wget versioning=deb
 ARG WGET_VERSION=1.25.0-2
 
-# Install Interactive Tools
+# Install all CLI tools in a single RUN to minimize layers.
+# --no-install-recommends keeps the image lean.
+# APT lists are cleaned up in the same RUN to avoid bloating the layer.
+# The locale-gen at the end enables UTF-8 for proper Unicode support.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     acl=${ACL_VERSION} \
     bash-completion=${BASH_COMPLETION_VERSION} \
@@ -41,11 +60,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && sed -i '/en_US.UTF-8 UTF-8/s/^# //g' /etc/locale.gen \
     && locale-gen en_US.UTF-8
 
-# Configure Shell, Aliases, and Theme
+# Shell customization — written to /etc/profile.d/terminal.sh so it loads
+# automatically in any login shell. Includes:
+#   - Convenience aliases (py, ll, la, safe rm/cp/mv with -i)
+#   - Tab completion for uv and pixi (generated dynamically)
+# The /etc/bash.bashrc append ensures history persistence across sessions
+# and sources the profile script for non-login interactive shells too.
 # hadolint ignore=SC2016
 RUN printf 'alias py="python3"\nalias ..="cd .."\nalias ...="cd ../.."\nalias ll="ls -alF"\nalias la="ls -A"\nalias l="ls -CF"\nalias rm="rm -i"\nalias cp="cp -i"\nalias mv="mv -i"\ncommand -v uv >/dev/null 2>&1 && eval "$(uv generate-shell-completion bash)"\ncommand -v pixi >/dev/null 2>&1 && eval "$(pixi completion --shell bash)"\n' > /etc/profile.d/terminal.sh \
     && printf 'export HISTFILE="${HOME}/.bash_history"\nshopt -s histappend\nPROMPT_COMMAND="history -a;$PROMPT_COMMAND"\n[ -f /etc/profile.d/terminal.sh ] && . /etc/profile.d/terminal.sh\n' >> /etc/bash.bashrc
 
+# Set locale and terminal type for proper Unicode and color support
 ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8 \
     TERM=xterm-256color
