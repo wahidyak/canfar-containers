@@ -120,22 +120,20 @@ RUN npm install -g \
     @google/gemini-cli@${GEMINI_CLI_VERSION} \
     @openai/codex@${CODEX_CLI_VERSION}
 
-# --- tmux Persistent Sessions + Container Startup Script ---
-# tmux config so sessions survive browser tab reloads and network disconnects.
-# When ttyd reconnects, users get their full scrollback and output history back.
-#   tmux.conf: login shells, mouse support, 50k scrollback, Gruvbox status bar
-#   /cadc/tmux-session.sh: reattaches to existing "canfar" session or creates one
-#   /cadc/startup.sh: creates user dirs, launches ttyd on port 5000
+# --- tmux Configuration + Container Startup Script ---
+# tmux is pre-configured but NOT auto-started — its PTY allocation conflicts
+# with ttyd in some platform environments. Users who want persistent sessions
+# can run: tmux new -A -s main
+# /cadc/startup.sh creates user directories (persisted via CADC volume mounts)
+# and launches ttyd on port 5000 with a bash login shell.
 # hadolint ignore=SC2016
 RUN printf 'set -g default-command "bash --login"\nset -g mouse on\nset -g history-limit 50000\nset -g status-style "bg=#282828,fg=#d79921"\nset -g status-left " #S "\nset -g status-right ""\n' > /etc/tmux.conf \
-    && printf '#!/bin/bash\ntmux new-session -A -s canfar 2>/dev/null\nexec bash -l\n' > /cadc/tmux-session.sh \
-    && chmod +x /cadc/tmux-session.sh \
     && printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
 ttyd --writable --port 5000 -w \"\${HOME}\" \
 -t titleFixed=\"CANFAR Webterm\" \
 -t theme='{\"background\": \"#282828\"}' \
-/cadc/tmux-session.sh\n" > /cadc/startup.sh \
+/bin/bash -l\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 EXPOSE 5000
