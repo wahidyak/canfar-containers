@@ -120,28 +120,15 @@ RUN npm install -g \
     @google/gemini-cli@${GEMINI_CLI_VERSION} \
     @openai/codex@${CODEX_CLI_VERSION}
 
-# --- tmux Persistent Sessions ---
-# System-wide tmux config so sessions survive browser tab reloads and
-# network disconnects. When ttyd reconnects, users get their full
-# scrollback, running processes, and output history back.
-#   - default-command: new panes/windows get a login shell (sources
-#     Starship, aliases, completions from /etc/profile.d/)
-#   - mouse: enables scroll, pane selection, and resize via mouse
-#   - history-limit: 50,000 lines of scrollback per pane
-#   - status bar: Gruvbox-themed to match the Starship prompt
+# --- tmux Persistent Sessions + Container Startup Script ---
+# tmux config so sessions survive browser tab reloads and network disconnects.
+# When ttyd reconnects, users get their full scrollback and output history back.
+#   tmux.conf: login shells, mouse support, 50k scrollback, Gruvbox status bar
+#   /cadc/tmux-session.sh: reattaches to existing "canfar" session or creates one
+#   /cadc/startup.sh: creates user dirs, launches ttyd on port 5000
 # hadolint ignore=SC2016
-RUN printf 'set -g default-command "bash --login"\nset -g mouse on\nset -g history-limit 50000\nset -g status-style "bg=#282828,fg=#d79921"\nset -g status-left " #S "\nset -g status-right ""\n' > /etc/tmux.conf
-
-# --- Container Startup Script ---
-# Two scripts work together for persistent terminal sessions:
-#   /cadc/tmux-session.sh — tmux wrapper that reattaches to an existing
-#     session ("canfar") or creates a new one. This is what ttyd spawns
-#     for each connection, so reloading the tab reconnects to the same
-#     session with full output history intact.
-#   /cadc/startup.sh — the container entrypoint. Creates user directories
-#     (persisted via CADC volume mounts) and launches ttyd on port 5000.
-# hadolint ignore=SC2016
-RUN printf '#!/bin/bash\nSESSION="canfar"\nif tmux has-session -t "$SESSION" 2>/dev/null; then\n    exec tmux attach-session -t "$SESSION"\nelse\n    exec tmux new-session -s "$SESSION"\nfi\n' > /cadc/tmux-session.sh \
+RUN printf 'set -g default-command "bash --login"\nset -g mouse on\nset -g history-limit 50000\nset -g status-style "bg=#282828,fg=#d79921"\nset -g status-left " #S "\nset -g status-right ""\n' > /etc/tmux.conf \
+    && printf '#!/bin/bash\nSESSION="canfar"\nif tmux has-session -t "$SESSION" 2>/dev/null; then\n    exec tmux attach-session -t "$SESSION"\nelse\n    exec tmux new-session -s "$SESSION"\nfi\n' > /cadc/tmux-session.sh \
     && chmod +x /cadc/tmux-session.sh \
     && printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
