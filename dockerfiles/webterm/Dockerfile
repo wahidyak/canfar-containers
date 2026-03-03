@@ -120,19 +120,19 @@ RUN npm install -g \
     @google/gemini-cli@${GEMINI_CLI_VERSION} \
     @openai/codex@${CODEX_CLI_VERSION}
 
-# --- tmux Persistent Sessions + Container Startup Script ---
-# ttyd spawns "tmux new-session -A" for each browser connection. The -A flag
-# creates a new session if none exists, or attaches to the existing one. When
-# the browser disconnects, only the tmux client dies — the server keeps the
-# session alive with full scrollback. On reconnect, -A reattaches automatically.
+# --- tmux + Container Startup Script ---
+# tmux is pre-configured for users who want persistent sessions manually.
+# Auto-start is not used because the CANFAR platform environment causes
+# tmux's inner shell to exit immediately (profile/env incompatibility).
+# Users can opt in with: tmux new -A -s main
 # hadolint ignore=SC2016
-RUN printf 'set -g mouse on\nset -g history-limit 50000\nset -g status-style "bg=#282828,fg=#d79921"\nset -g status-left " #S "\nset -g status-right ""\nset -g escape-time 50\n' > /etc/tmux.conf \
+RUN printf 'set -g mouse on\nset -g history-limit 50000\nset -g status-style "bg=#282828,fg=#d79921"\nset -g status-left " #S "\nset -g status-right ""\n' > /etc/tmux.conf \
     && printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
 ttyd --writable --port 5000 -w \"\${HOME}\" \
 -t titleFixed=\"CANFAR Webterm\" \
 -t theme='{\"background\": \"#282828\"}' \
-tmux new-session -A -s canfar\n" > /cadc/startup.sh \
+/bin/bash -l\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 EXPOSE 5000
