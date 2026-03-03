@@ -121,20 +121,18 @@ RUN npm install -g \
     @openai/codex@${CODEX_CLI_VERSION}
 
 # --- tmux Persistent Sessions + Container Startup Script ---
-# The tmux SERVER starts detached (its own PTY, independent of ttyd). ttyd then
-# spawns "tmux attach" (a lightweight client) for each browser connection. When
+# ttyd spawns "tmux new-session -A" for each browser connection. The -A flag
+# creates a new session if none exists, or attaches to the existing one. When
 # the browser disconnects, only the tmux client dies — the server keeps the
-# session alive with full scrollback and running processes. On reconnect, a new
-# tmux client reattaches to the same session.
+# session alive with full scrollback. On reconnect, -A reattaches automatically.
 # hadolint ignore=SC2016
-RUN printf 'set -g default-command "bash --login"\nset -g mouse on\nset -g history-limit 50000\nset -g status-style "bg=#282828,fg=#d79921"\nset -g status-left " #S "\nset -g status-right ""\nset -g escape-time 50\n' > /etc/tmux.conf \
+RUN printf 'set -g mouse on\nset -g history-limit 50000\nset -g status-style "bg=#282828,fg=#d79921"\nset -g status-left " #S "\nset -g status-right ""\nset -g escape-time 50\n' > /etc/tmux.conf \
     && printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
-tmux new-session -d -s canfar 2>/dev/null || true\n\
 ttyd --writable --port 5000 -w \"\${HOME}\" \
 -t titleFixed=\"CANFAR Webterm\" \
 -t theme='{\"background\": \"#282828\"}' \
-tmux attach-session -t canfar\n" > /cadc/startup.sh \
+tmux new-session -A -s canfar\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 EXPOSE 5000
