@@ -128,7 +128,7 @@ RUN npm install -g \
 #   /cadc/startup.sh: creates user dirs, launches ttyd on port 5000
 # hadolint ignore=SC2016
 RUN printf 'set -g default-command "bash --login"\nset -g mouse on\nset -g history-limit 50000\nset -g status-style "bg=#282828,fg=#d79921"\nset -g status-left " #S "\nset -g status-right ""\n' > /etc/tmux.conf \
-    && printf '#!/bin/bash\nSESSION="canfar"\nif tmux has-session -t "$SESSION" 2>/dev/null; then\n    exec tmux attach-session -t "$SESSION"\nelse\n    exec tmux new-session -s "$SESSION"\nfi\n' > /cadc/tmux-session.sh \
+    && printf '#!/bin/bash\ntmux new-session -A -s canfar 2>/dev/null\nexec bash -l\n' > /cadc/tmux-session.sh \
     && chmod +x /cadc/tmux-session.sh \
     && printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
