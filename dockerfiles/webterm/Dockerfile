@@ -120,19 +120,35 @@ RUN npm install -g \
     @google/gemini-cli@${GEMINI_CLI_VERSION} \
     @openai/codex@${CODEX_CLI_VERSION}
 
-# --- Container Startup Script ---
-# /cadc/startup.sh is the entrypoint. It:
-#   1. Creates user-specific directories for local bins, uv cache, and pixi
-#      (these paths may be persisted across sessions via CADC volume mounts)
-#   2. Launches ttyd in writable mode on port 5000, opening a bash login shell
-#      with a Gruvbox-themed background
+# --- tmux Persistent Sessions ---
+# System-wide tmux config so sessions survive browser tab reloads and
+# network disconnects. When ttyd reconnects, users get their full
+# scrollback, running processes, and output history back.
+#   - default-command: new panes/windows get a login shell (sources
+#     Starship, aliases, completions from /etc/profile.d/)
+#   - mouse: enables scroll, pane selection, and resize via mouse
+#   - history-limit: 50,000 lines of scrollback per pane
+#   - status bar: Gruvbox-themed to match the Starship prompt
 # hadolint ignore=SC2016
-RUN printf "#!/bin/bash\n\
+RUN printf 'set -g default-command "bash --login"\nset -g mouse on\nset -g history-limit 50000\nset -g status-style "bg=#282828,fg=#d79921"\nset -g status-left " #S "\nset -g status-right ""\n' > /etc/tmux.conf
+
+# --- Container Startup Script ---
+# Two scripts work together for persistent terminal sessions:
+#   /cadc/tmux-session.sh — tmux wrapper that reattaches to an existing
+#     session ("canfar") or creates a new one. This is what ttyd spawns
+#     for each connection, so reloading the tab reconnects to the same
+#     session with full output history intact.
+#   /cadc/startup.sh — the container entrypoint. Creates user directories
+#     (persisted via CADC volume mounts) and launches ttyd on port 5000.
+# hadolint ignore=SC2016
+RUN printf '#!/bin/bash\nSESSION="canfar"\nif tmux has-session -t "$SESSION" 2>/dev/null; then\n    exec tmux attach-session -t "$SESSION"\nelse\n    exec tmux new-session -s "$SESSION"\nfi\n' > /cadc/tmux-session.sh \
+    && chmod +x /cadc/tmux-session.sh \
+    && printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
 ttyd --writable --port 5000 -w \"\${HOME}\" \
 -t titleFixed=\"CANFAR Webterm\" \
 -t theme='{\"background\": \"#282828\"}' \
-/bin/bash -l\n" > /cadc/startup.sh \
+/cadc/tmux-session.sh\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 EXPOSE 5000
