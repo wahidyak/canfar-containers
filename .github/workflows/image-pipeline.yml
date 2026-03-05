@@ -38,7 +38,7 @@ on:
 env:
   REGISTRY: images.canfar.net
   RELEASE_TAG: "26.02"
-  ASTROML_TAG: "2026.3"
+  ASTROML_TAG: "26.03"
 
 jobs:
   # --- Job 0: Lint ---
@@ -185,5 +185,8 @@ jobs:
           target: ${{ matrix.variant.target }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.REGISTRY }}/cadc/astroml${{ matrix.variant.tag_suffix }}:${{ env.ASTROML_TAG }}
+          build-args: |
+            REGISTRY=${{ env.REGISTRY }}
+            PYTHON_VERSION=3.12
           cache-from: type=gha
           cache-to: type=gha,mode=max

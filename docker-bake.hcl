@@ -27,7 +27,7 @@ variable "RELEASE_TAG" {
 
 # Release tag for AstroML images (YYYY.minor format)
 variable "ASTROML_TAG" {
-  default = "2026.3"
+  default = "26.03"
 }
 
 # Default group: building with no target specified builds both
