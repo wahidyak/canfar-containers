@@ -68,8 +68,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python${PYTHON_VERSION}-venv \
     python${PYTHON_VERSION}-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -s /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 \
-    && ln -s /usr/bin/python${PYTHON_VERSION} /usr/bin/python
+    && ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 \
+    && ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python
 
 # Copy uv binary from its official image
 COPY --from=uv-bin /uv /usr/local/bin/uv
@@ -119,8 +119,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python${PYTHON_VERSION}-venv \
     python${PYTHON_VERSION}-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -s /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 \
-    && ln -s /usr/bin/python${PYTHON_VERSION} /usr/bin/python
+    && ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 \
+    && ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python
 
 COPY --from=uv-bin /uv /usr/local/bin/uv
 COPY --from=uv-bin /uvx /usr/local/bin/uvx
