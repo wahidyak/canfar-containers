@@ -137,9 +137,9 @@ ARG PYTORCH_VERSION=2.6.0
 ARG TORCHVISION_VERSION=0.21.0
 RUN uv sync --frozen --no-dev \
     && uv pip install --no-cache \
-    torch==${PYTORCH_VERSION}+rocm6.2 \
-    torchvision==${TORCHVISION_VERSION}+rocm6.2 \
-    --index-url https://download.pytorch.org/whl/rocm6.2
+    torch==${PYTORCH_VERSION}+rocm6.2.4 \
+    torchvision==${TORCHVISION_VERSION}+rocm6.2.4 \
+    --index-url https://download.pytorch.org/whl/rocm6.2.4
 
 ENV PATH="/app/.venv/bin:$PATH"
 
