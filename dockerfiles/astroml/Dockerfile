@@ -78,8 +78,7 @@ COPY --from=uv-bin /uvx /usr/local/bin/uvx
 ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python \
     UV_PYTHON_BIN_DIR=/usr/local/bin \
     UV_TOOL_DIR=/usr/local/share/uv/tools \
-    UV_TOOL_BIN_DIR=/usr/local/bin \
-    UV_PYTHON=/usr/bin/python${PYTHON_VERSION}
+    UV_TOOL_BIN_DIR=/usr/local/bin
 
 WORKDIR /app
 
@@ -128,8 +127,7 @@ COPY --from=uv-bin /uvx /usr/local/bin/uvx
 ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python \
     UV_PYTHON_BIN_DIR=/usr/local/bin \
     UV_TOOL_DIR=/usr/local/share/uv/tools \
-    UV_TOOL_BIN_DIR=/usr/local/bin \
-    UV_PYTHON=/usr/bin/python${PYTHON_VERSION}
+    UV_TOOL_BIN_DIR=/usr/local/bin
 
 WORKDIR /app
 
