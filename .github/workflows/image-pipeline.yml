@@ -37,10 +37,21 @@ on:
 # Global variables shared across all jobs
 env:
   REGISTRY: images.canfar.net
-  RELEASE_TAG: "26.02"
-  ASTROML_TAG: "26.03"
 
 jobs:
+  # --- Job: Generate Tag ---
+  # Dynamically generates the monthly release tag (YY.MM format).
+  # This tag is shared with all downstream jobs.
+  setup:
+    name: Generate Release Tag
+    runs-on: ubuntu-24.04
+    outputs:
+      release_tag: ${{ steps.date.outputs.tag }}
+    steps:
+      - name: Get current date
+        id: date
+        run: echo "tag=$(date +'%y.%m')" >> $GITHUB_OUTPUT
+
   # --- Job 0: Lint ---
   # Runs hadolint on all Dockerfiles to enforce best practices.
   # Must pass before any builds start.
@@ -92,10 +103,10 @@ jobs:
   # Builds terminal and webterm together using Docker Bake (docker-bake.hcl).
   # Bake ensures the terminal image is built first and used as the base for
   # webterm, maintaining the dependency chain without pushing intermediates.
-  # Waits for both lint and python jobs to complete.
+  # Waits for setup, lint and python jobs to complete.
   interactive-stack:
     name: Interactive Stack
-    needs: [lint, python]
+    needs: [setup, lint, python]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -108,7 +119,8 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.CANFAR_REGISTRY_USER }}
           password: ${{ secrets.CANFAR_REGISTRY_PASSWORD }}
-      # Bake reads docker-bake.hcl and builds all targets in the default group
+      # Bake reads docker-bake.hcl and builds all targets in the default group.
+      # We override the tags with the dynamically generated release tag.
       - name: Build and Push (Bake)
         uses: docker/bake-action@v5
         with:
@@ -116,6 +128,8 @@ jobs:
           set: |
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
+            *.args.RELEASE_TAG=${{ needs.setup.outputs.release_tag }}
+            *.tags=images.canfar.net/cadc/${target}:${{ needs.setup.outputs.release_tag }}
 
   # --- Job 3: AstroML CPU ---
   # Builds the CPU-only AstroML scientific computing image.
@@ -123,7 +137,7 @@ jobs:
   # Uses docker/build-push-action with --target to select the CPU stage.
   astroml-cpu:
     name: AstroML (CPU)
-    needs: [lint, python]
+    needs: [setup, lint, python]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -142,7 +156,7 @@ jobs:
           context: ./dockerfiles/astroml
           target: astroml-cpu
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/cadc/astroml:${{ env.ASTROML_TAG }}
+          tags: ${{ env.REGISTRY }}/cadc/astroml:${{ needs.setup.outputs.release_tag }}
           build-args: |
             REGISTRY=${{ env.REGISTRY }}
             PYTHON_VERSION=3.12
@@ -156,7 +170,7 @@ jobs:
   # NOTE: These are large images. Consider dedicated runners for production.
   astroml-gpu:
     name: AstroML (${{ matrix.variant.name }})
-    needs: lint
+    needs: [setup, lint]
     runs-on: ubuntu-24.04
     strategy:
       matrix:
@@ -184,7 +198,7 @@ jobs:
           context: ./dockerfiles/astroml
           target: ${{ matrix.variant.target }}
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/cadc/astroml${{ matrix.variant.tag_suffix }}:${{ env.ASTROML_TAG }}
+          tags: ${{ env.REGISTRY }}/cadc/astroml${{ matrix.variant.tag_suffix }}:${{ needs.setup.outputs.release_tag }}
           build-args: |
             REGISTRY=${{ env.REGISTRY }}
             PYTHON_VERSION=3.12

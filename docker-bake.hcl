@@ -22,12 +22,12 @@ variable "REGISTRY" {
 
 # Release tag applied to terminal and webterm images (YY.MM format)
 variable "RELEASE_TAG" {
-  default = "26.02"
+  default = "local"
 }
 
 # Release tag for AstroML images (YYYY.minor format)
 variable "ASTROML_TAG" {
-  default = "26.03"
+  default = "local"
 }
 
 # Default group: building with no target specified builds both
