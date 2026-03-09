@@ -122,11 +122,13 @@ RUN npm install -g \
 
 # --- Cursor CLI Agent ---
 # Cursor's AI terminal assistant. Installed via its official script, then
-# moved to /usr/local/bin for global access by the canfar user.
+# the entire directory (which contains its bundled Node.js runtime) is moved
+# to /usr/local/share for global access by the canfar user.
 RUN curl https://cursor.com/install -fsS | bash \
-    && mv /root/.cursor/bin/agent /usr/local/bin/agent \
+    && mv /root/.local/share/cursor-agent /usr/local/share/cursor-agent \
+    && ln -sf /usr/local/share/cursor-agent/versions/$(ls /usr/local/share/cursor-agent/versions | head -n 1)/cursor-agent /usr/local/bin/agent \
     && chmod +x /usr/local/bin/agent \
-    && rm -rf /root/.cursor
+    && rm -rf /root/.local
 
 # --- tmux Persistent Sessions + Container Startup Script ---
 # ttyd spawns "tmux new-session -A" for each browser connection. The -A flag
