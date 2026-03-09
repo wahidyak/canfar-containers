@@ -126,7 +126,7 @@ RUN npm install -g \
 # to /usr/local/share for global access by the canfar user.
 RUN curl https://cursor.com/install -fsS | bash \
     && mv /root/.local/share/cursor-agent /usr/local/share/cursor-agent \
-    && ln -sf /usr/local/share/cursor-agent/versions/$(ls /usr/local/share/cursor-agent/versions | head -n 1)/cursor-agent /usr/local/bin/agent \
+    && ln -sf "/usr/local/share/cursor-agent/versions/$(find /usr/local/share/cursor-agent/versions -maxdepth 1 -mindepth 1 -type d -exec basename {} \; | head -n 1)/cursor-agent" /usr/local/bin/agent \
     && chmod +x /usr/local/bin/agent \
     && rm -rf /root/.local
 
