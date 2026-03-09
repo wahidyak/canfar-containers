@@ -120,6 +120,14 @@ RUN npm install -g \
     @google/gemini-cli@${GEMINI_CLI_VERSION} \
     @openai/codex@${CODEX_CLI_VERSION}
 
+# --- Cursor CLI Agent ---
+# Cursor's AI terminal assistant. Installed via its official script, then
+# moved to /usr/local/bin for global access by the canfar user.
+RUN curl https://cursor.com/install -fsS | bash \
+    && mv /root/.cursor/bin/agent /usr/local/bin/agent \
+    && chmod +x /usr/local/bin/agent \
+    && rm -rf /root/.cursor
+
 # --- tmux Persistent Sessions + Container Startup Script ---
 # ttyd spawns "tmux new-session -A" for each browser connection. The -A flag
 # creates a new session if none exists, or attaches to the existing one. When
