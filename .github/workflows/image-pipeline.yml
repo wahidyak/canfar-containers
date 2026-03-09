@@ -123,13 +123,13 @@ jobs:
       # We override the tags with the dynamically generated release tag.
       - name: Build and Push (Bake)
         uses: docker/bake-action@v5
+        env:
+          RELEASE_TAG: ${{ needs.setup.outputs.release_tag }}
         with:
           push: ${{ github.event_name != 'pull_request' }}
           set: |
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
-            *.args.RELEASE_TAG=${{ needs.setup.outputs.release_tag }}
-            *.tags=images.canfar.net/cadc/${target}:${{ needs.setup.outputs.release_tag }}
 
   # --- Job 3: AstroML CPU ---
   # Builds the CPU-only AstroML scientific computing image.
