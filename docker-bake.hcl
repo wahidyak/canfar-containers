@@ -11,8 +11,6 @@
 # Usage:
 #   docker buildx bake                    # Build terminal and webterm (default)
 #   docker buildx bake terminal           # Build terminal only
-#   docker buildx bake astroml            # Build all AstroML variants (CPU/CUDA/ROCm)
-#   docker buildx bake astroml-cpu        # Build AstroML CPU only
 #   RELEASE_TAG=26.03 docker buildx bake  # Override the release tag
 
 # Registry where images are hosted (CANFAR's Harbor instance)
@@ -22,11 +20,6 @@ variable "REGISTRY" {
 
 # Release tag applied to terminal and webterm images (YY.MM format)
 variable "RELEASE_TAG" {
-  default = "local"
-}
-
-# Release tag for AstroML images (YYYY.minor format)
-variable "ASTROML_TAG" {
   default = "local"
 }
 
@@ -59,51 +52,5 @@ target "webterm" {
   args = {
     REGISTRY = "${REGISTRY}"
     BASE_TAG = "${RELEASE_TAG}"
-  }
-}
-
-# =============================================================================
-# AstroML Scientific Computing Images
-#
-# Three hardware variants built from the same Dockerfile using --target.
-# The "astroml" group builds all three; individual targets can be built alone.
-# These are NOT in the default group — GPU images are heavy and need explicit
-# opt-in (and may require special CI runners).
-# =============================================================================
-
-group "astroml" {
-  targets = ["astroml-cpu", "astroml-cuda", "astroml-rocm"]
-}
-
-# CPU variant: inherits from the CANFAR Python image (uv/pixi included)
-target "astroml-cpu" {
-  context = "./dockerfiles/astroml"
-  target  = "astroml-cpu"
-  tags    = ["${REGISTRY}/cadc/astroml:${ASTROML_TAG}"]
-  args = {
-    REGISTRY = "${REGISTRY}"
-    PYTHON_VERSION = "3.12"
-  }
-}
-
-# NVIDIA CUDA variant: built from nvidia/cuda base with PyTorch CUDA wheels
-target "astroml-cuda" {
-  context = "./dockerfiles/astroml"
-  target  = "astroml-cuda"
-  tags    = ["${REGISTRY}/cadc/astroml-cuda:${ASTROML_TAG}"]
-  args = {
-    REGISTRY = "${REGISTRY}"
-    PYTHON_VERSION = "3.12"
-  }
-}
-
-# AMD ROCm variant: built from rocm base with PyTorch ROCm wheels
-target "astroml-rocm" {
-  context = "./dockerfiles/astroml"
-  target  = "astroml-rocm"
-  tags    = ["${REGISTRY}/cadc/astroml-rocm:${ASTROML_TAG}"]
-  args = {
-    REGISTRY = "${REGISTRY}"
-    PYTHON_VERSION = "3.12"
   }
 }

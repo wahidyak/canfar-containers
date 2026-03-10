@@ -11,8 +11,6 @@
 #
 # Job dependency chain:
 #   lint -> python (matrix: 3.10-3.14) -> interactive-stack (terminal + webterm)
-#                                      -> astroml-cpu
-#   lint -> astroml-gpu (CUDA + ROCm, no dependency on python job)
 
 name: CANFAR Container Image Pipeline
 
@@ -130,77 +128,3 @@ jobs:
           set: |
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
-
-  # --- Job 3: AstroML CPU ---
-  # Builds the CPU-only AstroML scientific computing image.
-  # Depends on python job because it inherits from images.canfar.net/cadc/python:3.12.
-  # Uses docker/build-push-action with --target to select the CPU stage.
-  astroml-cpu:
-    name: AstroML (CPU)
-    needs: [setup, lint, python]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Login to CANFAR Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.CANFAR_REGISTRY_USER }}
-          password: ${{ secrets.CANFAR_REGISTRY_PASSWORD }}
-      - name: Build and Push
-        uses: docker/build-push-action@v6
-        with:
-          context: ./dockerfiles/astroml
-          target: astroml-cpu
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/cadc/astroml:${{ needs.setup.outputs.release_tag }}
-          build-args: |
-            REGISTRY=${{ env.REGISTRY }}
-            PYTHON_VERSION=3.12
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # --- Job 4: AstroML GPU (CUDA + ROCm) ---
-  # Builds the NVIDIA and AMD GPU variants in parallel via matrix.
-  # These use vendor base images (nvidia/cuda, rocm/dev-ubuntu) and do NOT
-  # depend on the python job — they install uv and Python themselves.
-  # NOTE: These are large images. Consider dedicated runners for production.
-  astroml-gpu:
-    name: AstroML (${{ matrix.variant.name }})
-    needs: [setup, lint]
-    runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        variant:
-          - name: CUDA
-            target: astroml-cuda
-            tag_suffix: "-cuda"
-          - name: ROCm
-            target: astroml-rocm
-            tag_suffix: "-rocm"
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Login to CANFAR Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.CANFAR_REGISTRY_USER }}
-          password: ${{ secrets.CANFAR_REGISTRY_PASSWORD }}
-      - name: Build and Push
-        uses: docker/build-push-action@v6
-        with:
-          context: ./dockerfiles/astroml
-          target: ${{ matrix.variant.target }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/cadc/astroml${{ matrix.variant.tag_suffix }}:${{ needs.setup.outputs.release_tag }}
-          build-args: |
-            REGISTRY=${{ env.REGISTRY }}
-            PYTHON_VERSION=3.12
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
