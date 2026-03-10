@@ -138,7 +138,7 @@ RUN curl https://cursor.com/install -fsS | bash \
 # Note: default-shell is set explicitly because CANFAR sets SHELL=/sbin/nologin
 # (to block direct SSH login), which causes tmux to exit immediately without it.
 # hadolint ignore=SC2016
-RUN printf 'set -g default-shell /bin/bash\nset -g mouse on\nset -g history-limit 50000\nset -g status off\nset -g escape-time 50\n' > /etc/tmux.conf \
+RUN printf 'set -g default-shell /bin/bash\nset -g mouse off\nset -g history-limit 50000\nset -g status off\nset -g escape-time 50\n' > /etc/tmux.conf \
     && printf "#!/bin/bash\n\
 mkdir -p \"\${HOME}/.local/bin\" \"\${HOME}/.cache/uv\" \"\${HOME}/.pixi\"\n\
 ttyd --writable --port 5000 -w \"\${HOME}\" \
