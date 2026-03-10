@@ -9,10 +9,10 @@
 # Build chain: python:slim -> python -> terminal -> THIS IMAGE
 #
 # On the CANFAR Science Platform, this container is launched per-user.
-# The Skaha platform calls /skaha-system/start-jupyterlab.sh with the
-# session ID as $1 and expects JupyterLab on port 8888. Authentication
-# is handled externally by the platform. User home directories are
-# persistent via CADC's volume mounts.
+# For contributed sessions the platform calls /cadc/startup.sh with no
+# arguments; the session ID comes from the skaha_sessionid env var.
+# The base_url is built dynamically as session/contrib/<session-id>.
+# Authentication is handled externally by the platform.
 
 ARG REGISTRY=images.canfar.net
 ARG BASE_TAG=local
@@ -41,16 +41,13 @@ RUN uv pip install --system \
     jupyterlab-git==${JUPYTERLAB_GIT_VERSION} \
     ipywidgets==${IPYWIDGETS_VERSION}
 
-# --- Startup Scripts ---
-# /cadc/startup.sh: our own entrypoint following the CANFAR convention.
-# /skaha-system/start-jupyterlab.sh: the path the Skaha platform expects
-#   for notebook sessions. It receives the session ID as $1 and launches
-#   JupyterLab on port 8888 with the correct base_url for proxy routing.
+# --- Startup Script ---
+# The Skaha platform calls /cadc/startup.sh with no arguments for contrib
+# sessions. The base_url is derived from the skaha_sessionid env var.
+# If called with $1 (notebook-type session), that takes precedence.
 # hadolint ignore=SC2016
-RUN printf '#!/bin/bash\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi" "${HOME}/.jupyter"\ncd "${HOME}"\njupyter lab \\\n  --NotebookApp.base_url=session/notebook/"$1" \\\n  --NotebookApp.notebook_dir=/ \\\n  --NotebookApp.allow_origin="*" \\\n  --ServerApp.ip=0.0.0.0 \\\n  --ServerApp.port=8888 \\\n  --no-browser \\\n  --ServerApp.base_url=session/notebook/"$1" \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
-    && chmod +x /cadc/startup.sh \
-    && mkdir -p /skaha-system \
-    && ln -s /cadc/startup.sh /skaha-system/start-jupyterlab.sh
+RUN printf '#!/bin/bash\nSESSION_ID="${1:-${skaha_sessionid}}"\nBASE_URL="session/contrib/${SESSION_ID}"\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi" "${HOME}/.jupyter"\ncd "${HOME}"\nexec jupyter lab \\\n  --ServerApp.ip=0.0.0.0 \\\n  --ServerApp.port=8888 \\\n  --no-browser \\\n  --ServerApp.base_url="${BASE_URL}" \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  --NotebookApp.base_url="${BASE_URL}" \\\n  --NotebookApp.notebook_dir=/ \\\n  --NotebookApp.allow_origin="*" \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
+    && chmod +x /cadc/startup.sh
 
 EXPOSE 8888
 WORKDIR /tmp
