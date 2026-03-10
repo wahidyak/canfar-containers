@@ -10,7 +10,7 @@
 #   - Manual: via GitHub Actions "Run workflow" button (workflow_dispatch)
 #
 # Job dependency chain:
-#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (terminal + webterm)
+#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (terminal, webterm, jupyterlab)
 
 name: CANFAR Container Image Pipeline
 
@@ -98,9 +98,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   # --- Job 2: Interactive Stack (Bake Build) ---
-  # Builds terminal and webterm together using Docker Bake (docker-bake.hcl).
+  # Builds terminal, webterm, and jupyterlab together using Docker Bake.
   # Bake ensures the terminal image is built first and used as the base for
-  # webterm, maintaining the dependency chain without pushing intermediates.
+  # downstream images, maintaining the dependency chain without pushing intermediates.
   # Waits for setup, lint and python jobs to complete.
   interactive-stack:
     name: Interactive Stack

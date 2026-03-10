@@ -1,15 +1,15 @@
 # docker-bake.hcl — Docker Bake Build Configuration
 #
 # This file defines a multi-target build for the interactive CANFAR images
-# (terminal + webterm). Run with: docker buildx bake
+# (terminal, webterm, jupyterlab). Run with: docker buildx bake
 #
-# Bake builds both targets in the correct dependency order and, critically,
-# wires the webterm build to use the locally-built terminal image as its base
+# Bake builds all targets in the correct dependency order and, critically,
+# wires downstream images to use the locally-built terminal image as their base
 # (via the "contexts" block) instead of pulling from the remote registry.
 # This ensures the entire stack is built atomically from source.
 #
 # Usage:
-#   docker buildx bake                    # Build terminal and webterm (default)
+#   docker buildx bake                    # Build terminal, webterm, and jupyterlab (default)
 #   docker buildx bake terminal           # Build terminal only
 #   RELEASE_TAG=26.03 docker buildx bake  # Override the release tag
 
@@ -18,14 +18,14 @@ variable "REGISTRY" {
   default = "images.canfar.net"
 }
 
-# Release tag applied to terminal and webterm images (YY.MM format)
+# Release tag applied to all interactive images (YY.MM format)
 variable "RELEASE_TAG" {
   default = "local"
 }
 
-# Default group: building with no target specified builds both
+# Default group: building with no target specified builds all interactive images
 group "default" {
-  targets = ["terminal", "webterm"]
+  targets = ["terminal", "webterm", "jupyterlab"]
 }
 
 # Terminal image: interactive CLI environment built on Python 3.12
@@ -49,6 +49,19 @@ target "webterm" {
     "${REGISTRY}/cadc/terminal:${RELEASE_TAG}" = "target:terminal"
   }
   tags = ["${REGISTRY}/cadc/webterm:${RELEASE_TAG}"]
+  args = {
+    REGISTRY = "${REGISTRY}"
+    BASE_TAG = "${RELEASE_TAG}"
+  }
+}
+
+# JupyterLab image: browser-based notebook environment built on top of terminal.
+target "jupyterlab" {
+  context = "./dockerfiles/jupyterlab"
+  contexts = {
+    "${REGISTRY}/cadc/terminal:${RELEASE_TAG}" = "target:terminal"
+  }
+  tags = ["${REGISTRY}/cadc/jupyterlab:${RELEASE_TAG}"]
   args = {
     REGISTRY = "${REGISTRY}"
     BASE_TAG = "${RELEASE_TAG}"
