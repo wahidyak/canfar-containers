@@ -4,7 +4,7 @@
 #
 # A sibling to webterm in the CANFAR container stack. Inherits from the
 # terminal image and adds JupyterLab as the browser-facing service on
-# port 8888 (the CANFAR/Skaha notebook convention).
+# port 5000 (the CANFAR contributed session convention).
 #
 # Build chain: python:slim -> python -> terminal -> THIS IMAGE
 #
@@ -46,9 +46,9 @@ RUN uv pip install --system \
 # sessions. The base_url is derived from the skaha_sessionid env var.
 # If called with $1 (notebook-type session), that takes precedence.
 # hadolint ignore=SC2016
-RUN printf '#!/bin/bash\nSESSION_ID="${1:-${skaha_sessionid}}"\nBASE_URL="session/contrib/${SESSION_ID}"\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi" "${HOME}/.jupyter"\ncd "${HOME}"\nexec jupyter lab \\\n  --ServerApp.ip=0.0.0.0 \\\n  --ServerApp.port=8888 \\\n  --no-browser \\\n  --ServerApp.base_url="${BASE_URL}" \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  --NotebookApp.base_url="${BASE_URL}" \\\n  --NotebookApp.notebook_dir=/ \\\n  --NotebookApp.allow_origin="*" \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
+RUN printf '#!/bin/bash\nSESSION_ID="${1:-${skaha_sessionid}}"\nBASE_URL="session/contrib/${SESSION_ID}"\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi" "${HOME}/.jupyter"\ncd "${HOME}"\nexec jupyter lab \\\n  --ServerApp.ip=0.0.0.0 \\\n  --ServerApp.port=5000 \\\n  --no-browser \\\n  --ServerApp.base_url="${BASE_URL}" \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  --NotebookApp.base_url="${BASE_URL}" \\\n  --NotebookApp.notebook_dir=/ \\\n  --NotebookApp.allow_origin="*" \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
-EXPOSE 8888
+EXPOSE 5000
 WORKDIR /tmp
-CMD ["/cadc/startup.sh"]
+ENTRYPOINT ["/bin/bash", "-e", "/cadc/startup.sh"]
