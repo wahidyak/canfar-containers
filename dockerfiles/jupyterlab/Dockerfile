@@ -9,9 +9,8 @@
 # Build chain: python:slim -> python -> terminal -> THIS IMAGE
 #
 # On the CANFAR Science Platform, this container is launched per-user.
-# For contributed sessions the platform calls /cadc/startup.sh with no
-# arguments; the session ID comes from the skaha_sessionid env var.
-# The base_url is built dynamically as session/contrib/<session-id>.
+# For contributed sessions the platform calls /cadc/startup.sh. The proxy
+# strips the path prefix before forwarding, so JupyterLab serves from root.
 # Authentication is handled externally by the platform.
 
 ARG REGISTRY=images.canfar.net
@@ -42,11 +41,10 @@ RUN uv pip install --system \
     ipywidgets==${IPYWIDGETS_VERSION}
 
 # --- Startup Script ---
-# The Skaha platform calls /cadc/startup.sh with no arguments for contrib
-# sessions. The base_url is derived from the skaha_sessionid env var.
-# If called with $1 (notebook-type session), that takes precedence.
+# The CANFAR proxy for contrib sessions strips the path prefix before
+# forwarding, so JupyterLab serves from root (no base_url needed).
 # hadolint ignore=SC2016
-RUN printf '#!/bin/bash\nSESSION_ID="${1:-${skaha_sessionid}}"\nBASE_URL="session/contrib/${SESSION_ID}"\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi" "${HOME}/.jupyter"\ncd "${HOME}"\nexec jupyter lab \\\n  --ServerApp.ip=0.0.0.0 \\\n  --ServerApp.port=5000 \\\n  --no-browser \\\n  --ServerApp.base_url="${BASE_URL}" \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  --NotebookApp.base_url="${BASE_URL}" \\\n  --NotebookApp.notebook_dir=/ \\\n  --NotebookApp.allow_origin="*" \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
+RUN printf '#!/bin/bash\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi" "${HOME}/.jupyter"\ncd "${HOME}"\nexec jupyter lab \\\n  --ServerApp.ip=0.0.0.0 \\\n  --ServerApp.port=5000 \\\n  --no-browser \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  --ServerApp.token="" \\\n  --ServerApp.password="" \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 EXPOSE 5000
