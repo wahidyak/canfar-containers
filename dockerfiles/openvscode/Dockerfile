@@ -45,10 +45,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Download and install OpenVSCode Server from Gitpod's releases.
 # renovate: datasource=github-releases depName=gitpod-io/openvscode-server
 ARG OPENVSCODE_VERSION=v1.109.5
+# hadolint ignore=SC2086
 RUN ARCH=$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/') \
     && curl -fsSL "https://github.com/gitpod-io/openvscode-server/releases/download/openvscode-server-${OPENVSCODE_VERSION}/openvscode-server-${OPENVSCODE_VERSION}-linux-${ARCH}.tar.gz" \
        | tar -xz -C /opt \
-    && mv /opt/openvscode-server-${OPENVSCODE_VERSION}-linux-${ARCH} /opt/openvscode-server \
+    && mv "/opt/openvscode-server-${OPENVSCODE_VERSION}-linux-${ARCH}" /opt/openvscode-server \
     && ln -s /opt/openvscode-server/bin/openvscode-server /usr/local/bin/openvscode-server
 
 # --- VS Code Extensions for CANFAR Users ---
