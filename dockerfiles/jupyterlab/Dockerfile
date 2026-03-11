@@ -44,9 +44,20 @@ RUN uv pip install --system \
 # The CANFAR proxy for contrib sessions strips the path prefix before
 # forwarding, so JupyterLab serves from root (no base_url needed).
 # hadolint ignore=SC2016
-RUN printf '#!/bin/bash\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi" "${HOME}/.jupyter"\ncd "${HOME}"\nexec jupyter lab \\\n  --ServerApp.ip=0.0.0.0 \\\n  --ServerApp.port=5000 \\\n  --no-browser \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  --ServerApp.token="" \\\n  --ServerApp.password="" \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
+RUN printf '#!/bin/bash\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi" "${HOME}/.jupyter"\ncd "${HOME}"\nexec jupyter lab \\\n  --ServerApp.ip=0.0.0.0 \\\n  --ServerApp.port=5000 \\\n  --no-browser \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  --ServerApp.token="" \\\n  --ServerApp.password="" \\\n  '"'"'--ServerApp.terminado_settings={"shell_command": ["/bin/bash", "-l"]}'"'"' \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
+
+# --- JupyterLab Terminal Theme (Gruvbox) ---
+# Configure the terminal to match the webterm Gruvbox dark theme.
+# This creates system-wide JupyterLab settings that apply to all users.
+RUN mkdir -p /usr/local/share/jupyter/lab/settings \
+    && printf '{\n  "@jupyterlab/terminal-extension:plugin": {\n    "theme": "dark",\n    "fontFamily": "monospace",\n    "fontSize": 14\n  }\n}\n' > /usr/local/share/jupyter/lab/settings/overrides.json
+
+# Create a non-root user for running JupyterLab locally.
+# On CANFAR, the platform overrides the user at runtime.
+RUN useradd -m -s /bin/bash -u 1000 jupyter
 
 EXPOSE 5000
 WORKDIR /tmp
+USER jupyter
 ENTRYPOINT ["/bin/bash", "-e", "/cadc/startup.sh"]

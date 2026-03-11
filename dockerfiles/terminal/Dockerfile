@@ -67,7 +67,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The /etc/bash.bashrc append ensures history persistence across sessions
 # and sources the profile script for non-login interactive shells too.
 # hadolint ignore=SC2016
-RUN printf 'alias py="python3"\nalias ..="cd .."\nalias ...="cd ../.."\nalias ll="ls -alF"\nalias la="ls -A"\nalias l="ls -CF"\nalias rm="rm -i"\nalias cp="cp -i"\nalias mv="mv -i"\ncommand -v uv >/dev/null 2>&1 && eval "$(uv generate-shell-completion bash)"\ncommand -v pixi >/dev/null 2>&1 && eval "$(pixi completion --shell bash)"\n' > /etc/profile.d/terminal.sh \
+RUN printf 'alias py="python3"\nalias ..="cd .."\nalias ...="cd ../.."\nalias ll="ls -alF"\nalias la="ls -A"\nalias l="ls -CF"\nalias rm="rm -i"\nalias cp="cp -i"\nalias mv="mv -i"\nif [ -n "$BASH_VERSION" ]; then\n  command -v uv >/dev/null 2>&1 && eval "$(uv generate-shell-completion bash)"\n  command -v pixi >/dev/null 2>&1 && eval "$(pixi completion --shell bash)"\nfi\n' > /etc/profile.d/terminal.sh \
     && printf 'export HISTFILE="${HOME}/.bash_history"\nshopt -s histappend\nPROMPT_COMMAND="history -a;$PROMPT_COMMAND"\n[ -f /etc/profile.d/terminal.sh ] && . /etc/profile.d/terminal.sh\n' >> /etc/bash.bashrc
 
 # Set locale and terminal type for proper Unicode and color support
