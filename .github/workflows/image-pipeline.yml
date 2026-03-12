@@ -9,8 +9,13 @@
 #   - Pull requests: lint-only (no build/push) when Dockerfiles change
 #   - Manual: via GitHub Actions "Run workflow" button (workflow_dispatch)
 #
+# Selective builds:
+#   On push, only images whose Dockerfiles changed are rebuilt. The dependency
+#   chain is respected: if terminal changes, all downstream images rebuild.
+#   On schedule/dispatch, all images are rebuilt to pick up upstream updates.
+#
 # Job dependency chain:
-#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (terminal, webterm, jupyterlab, openvscode)
+#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (only changed targets)
 
 name: CANFAR Container Image Pipeline
 
@@ -50,6 +55,102 @@ jobs:
         id: date
         run: echo "tag=$(date +'%y.%m')" >> $GITHUB_OUTPUT
 
+  # --- Job: Detect Changes ---
+  # Determines which Dockerfiles changed to enable selective builds.
+  # Respects the dependency chain: terminal changes trigger downstream rebuilds.
+  # On schedule/dispatch, all targets are marked for rebuild.
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-24.04
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      terminal: ${{ steps.filter.outputs.terminal }}
+      webterm: ${{ steps.filter.outputs.webterm }}
+      jupyterlab: ${{ steps.filter.outputs.jupyterlab }}
+      openvscode: ${{ steps.filter.outputs.openvscode }}
+      bake_targets: ${{ steps.targets.outputs.bake_targets }}
+    steps:
+      - uses: actions/checkout@v4
+      # On schedule/dispatch, rebuild everything
+      - name: Force all targets on schedule/dispatch
+        id: force-all
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo "python=true" >> $GITHUB_OUTPUT
+          echo "terminal=true" >> $GITHUB_OUTPUT
+          echo "webterm=true" >> $GITHUB_OUTPUT
+          echo "jupyterlab=true" >> $GITHUB_OUTPUT
+          echo "openvscode=true" >> $GITHUB_OUTPUT
+      # On push/PR, detect which files changed
+      - name: Detect changed paths
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            python:
+              - 'dockerfiles/python/**'
+            terminal:
+              - 'dockerfiles/terminal/**'
+            webterm:
+              - 'dockerfiles/webterm/**'
+            jupyterlab:
+              - 'dockerfiles/jupyterlab/**'
+            openvscode:
+              - 'dockerfiles/openvscode/**'
+            bake-config:
+              - 'docker-bake.hcl'
+      # Combine results: respect dependency chain (terminal -> downstream)
+      - name: Resolve dependencies
+        id: filter
+        run: |
+          # Use force-all outputs if schedule/dispatch, otherwise use changes
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "python=true" >> $GITHUB_OUTPUT
+            echo "terminal=true" >> $GITHUB_OUTPUT
+            echo "webterm=true" >> $GITHUB_OUTPUT
+            echo "jupyterlab=true" >> $GITHUB_OUTPUT
+            echo "openvscode=true" >> $GITHUB_OUTPUT
+          else
+            # Python changes only affect python images
+            echo "python=${{ steps.changes.outputs.python }}" >> $GITHUB_OUTPUT
+            # Terminal changes cascade to all downstream images
+            TERMINAL="${{ steps.changes.outputs.terminal }}"
+            BAKE_CONFIG="${{ steps.changes.outputs.bake-config }}"
+            if [[ "$TERMINAL" == "true" || "$BAKE_CONFIG" == "true" ]]; then
+              echo "terminal=true" >> $GITHUB_OUTPUT
+              echo "webterm=true" >> $GITHUB_OUTPUT
+              echo "jupyterlab=true" >> $GITHUB_OUTPUT
+              echo "openvscode=true" >> $GITHUB_OUTPUT
+            else
+              echo "terminal=false" >> $GITHUB_OUTPUT
+              echo "webterm=${{ steps.changes.outputs.webterm }}" >> $GITHUB_OUTPUT
+              echo "jupyterlab=${{ steps.changes.outputs.jupyterlab }}" >> $GITHUB_OUTPUT
+              echo "openvscode=${{ steps.changes.outputs.openvscode }}" >> $GITHUB_OUTPUT
+            fi
+          fi
+      # Build the list of bake targets to build
+      - name: Determine bake targets
+        id: targets
+        run: |
+          TARGETS=""
+          if [[ "${{ steps.filter.outputs.terminal }}" == "true" ]]; then
+            TARGETS="terminal"
+          fi
+          if [[ "${{ steps.filter.outputs.webterm }}" == "true" ]]; then
+            TARGETS="$TARGETS webterm"
+          fi
+          if [[ "${{ steps.filter.outputs.jupyterlab }}" == "true" ]]; then
+            TARGETS="$TARGETS jupyterlab"
+          fi
+          if [[ "${{ steps.filter.outputs.openvscode }}" == "true" ]]; then
+            TARGETS="$TARGETS openvscode"
+          fi
+          # Trim leading/trailing whitespace
+          TARGETS=$(echo "$TARGETS" | xargs)
+          echo "bake_targets=$TARGETS" >> $GITHUB_OUTPUT
+          echo "Bake targets to build: $TARGETS"
+
   # --- Job 0: Lint ---
   # Runs hadolint on all Dockerfiles to enforce best practices.
   # Must pass before any builds start.
@@ -68,9 +169,11 @@ jobs:
   # Each version is built in parallel via the matrix strategy.
   # Images are pushed to: images.canfar.net/cadc/python:<version>
   # On PRs: build-only (no push, no registry login).
+  # Skipped if no python/** files changed (unless schedule/dispatch).
   python:
     name: Python ${{ matrix.version }}
-    needs: lint
+    needs: [lint, detect-changes]
+    if: needs.detect-changes.outputs.python == 'true'
     runs-on: ubuntu-24.04
     strategy:
       matrix:
@@ -98,13 +201,15 @@ jobs:
           cache-to: type=gha,mode=max
 
   # --- Job 2: Interactive Stack (Bake Build) ---
-  # Builds terminal, webterm, jupyterlab, and openvscode together using Docker Bake.
+  # Builds only the changed targets using Docker Bake.
   # Bake ensures the terminal image is built first and used as the base for
   # downstream images, maintaining the dependency chain without pushing intermediates.
-  # Waits for setup, lint and python jobs to complete.
+  # Skipped if no interactive stack files changed.
   interactive-stack:
     name: Interactive Stack
-    needs: [setup, lint, python]
+    needs: [setup, lint, detect-changes]
+    # Only run if at least one bake target needs building
+    if: needs.detect-changes.outputs.bake_targets != ''
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -117,13 +222,16 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.CANFAR_REGISTRY_USER }}
           password: ${{ secrets.CANFAR_REGISTRY_PASSWORD }}
-      # Bake reads docker-bake.hcl and builds all targets in the default group.
+      - name: Show targets to build
+        run: echo "Building targets: ${{ needs.detect-changes.outputs.bake_targets }}"
+      # Bake builds only the targets that changed.
       # We override the tags with the dynamically generated release tag.
       - name: Build and Push (Bake)
         uses: docker/bake-action@v5
         env:
           RELEASE_TAG: ${{ needs.setup.outputs.release_tag }}
         with:
+          targets: ${{ needs.detect-changes.outputs.bake_targets }}
           push: ${{ github.event_name != 'pull_request' }}
           set: |
             *.cache-from=type=gha
