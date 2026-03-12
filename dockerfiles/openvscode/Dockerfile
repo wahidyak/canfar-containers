@@ -82,6 +82,21 @@ RUN curl https://cursor.com/install -fsS | bash \
 # Open-source AI coding assistant that works with multiple LLM providers.
 RUN /opt/openvscode-server/bin/openvscode-server --install-extension continue.continue
 
+# --- Starship Prompt ---
+# Starship is a fast, cross-shell prompt. Installed via its official script
+# and configured to initialize in every bash login shell via /etc/profile.d/.
+# renovate: datasource=github-releases depName=starship/starship
+ARG STARSHIP_VERSION=v1.24.2
+RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes --version ${STARSHIP_VERSION} \
+    && /usr/local/bin/starship init bash --print-full-init >> /etc/profile.d/terminal.sh
+
+# --- Starship Gruvbox Theme ---
+# Writes a full Starship config with the Gruvbox Dark color palette.
+# Sections: username (yellow), directory (aqua, full path), git branch/status (green).
+# hadolint ignore=SC2016
+RUN printf 'scan_timeout = 1000\ncommand_timeout = 1000\npalette = "gruvbox"\n\n[palettes.gruvbox]\nbg0 = "#282828"\nyellow = "#d79921"\naqua = "#689d6a"\ngreen = "#98971a"\nred = "#cc241d"\n\n[username]\nshow_always = true\nstyle_user = "bg:yellow fg:bg0"\nstyle_root = "bg:red fg:bg0"\nformat = "[ $user ]($style)"\n\n[directory]\nstyle = "bg:aqua fg:bg0"\nformat = "[ $path ]($style)"\ntruncation_length = 0\ntruncate_to_repo = false\n\n[git_branch]\nsymbol = "λ "\nstyle = "bg:green fg:bg0"\nformat = "[ $symbol$branch ]($style)"\n\n[git_status]\ndisabled = false\nstyle = "bg:green fg:bg0"\nformat = "([$all_status$ahead_behind]($style))"\nstaged = "[+$count](bg:green fg:bg0)"\nmodified = "[~$count](bg:green fg:bg0)"\ndeleted = "[-$count](bg:green fg:bg0)"\nuntracked = "[?$count](bg:green fg:bg0)"\nahead = "[▲$count](bg:green fg:bg0)"\nbehind = "[▼$count](bg:green fg:bg0)"\n\n[container]\ndisabled = true\n\n[character]\nsuccess_symbol = "[ → ](bold green)"\nerror_symbol = "[ ✗ ](bold red)"\n' > /etc/starship.toml
+ENV STARSHIP_CONFIG=/etc/starship.toml
+
 # --- Machine-level VS Code Settings ---
 # Configure terminal to use bash explicitly. On CANFAR, users have /sbin/nologin
 # in /etc/passwd, so we must override the terminal profile.
