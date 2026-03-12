@@ -41,11 +41,10 @@ RUN uv pip install --system \
     ipywidgets==${IPYWIDGETS_VERSION}
 
 # --- Startup Script ---
-# On CANFAR, the proxy does NOT strip the session path, so we must set
-# --ServerApp.base_url to match /session/contrib/<session-id>/.
-# The skaha_sessionid env var is injected by the platform at runtime.
+# The CANFAR proxy strips the path prefix before forwarding, so JupyterLab
+# serves from root (no base_url needed). Authentication handled by platform.
 # hadolint ignore=SC2016
-RUN printf '#!/bin/bash -e\nset -e\n\necho "[JupyterLab] Starting JupyterLab server..."\n\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi" "${HOME}/.jupyter"\ncd "${HOME}"\n\n# Build base URL from session ID if available (CANFAR platform)\nBASE_URL_ARG=""\nif [ -n "${skaha_sessionid:-}" ]; then\n  BASE_URL_ARG="--ServerApp.base_url=/session/contrib/${skaha_sessionid}/"\n  echo "[JupyterLab] Using base URL: /session/contrib/${skaha_sessionid}/"\nfi\n\nexec jupyter lab \\\n  --ServerApp.ip=0.0.0.0 \\\n  --ServerApp.port=5000 \\\n  --no-browser \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  --ServerApp.token="" \\\n  --ServerApp.password="" \\\n  '"'"'--ServerApp.terminado_settings={"shell_command": ["/bin/bash", "-l"]}'"'"' \\\n  ${BASE_URL_ARG} \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
+RUN printf '#!/bin/bash -e\nset -e\n\necho "[JupyterLab] Starting JupyterLab server..."\n\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi" "${HOME}/.jupyter"\ncd "${HOME}"\n\nexec jupyter lab \\\n  --ServerApp.ip=0.0.0.0 \\\n  --ServerApp.port=5000 \\\n  --no-browser \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  --ServerApp.token="" \\\n  --ServerApp.password="" \\\n  '"'"'--ServerApp.terminado_settings={"shell_command": ["/bin/bash", "-l"]}'"'"' \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 # --- JupyterLab Terminal Theme (Gruvbox) ---
