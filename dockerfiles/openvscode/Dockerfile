@@ -24,6 +24,11 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 LABEL description="CANFAR OpenVSCode Server IDE Environment" \
       org.opencontainers.image.version="26.03"
 
+# Ensure bash is the default shell for terminal processes.
+# On CANFAR, the platform injects users with /sbin/nologin in /etc/passwd,
+# but code-server works because it respects $SHELL. OpenVSCode is stricter.
+ENV SHELL=/bin/bash
+
 # /cadc is the CANFAR platform convention for platform-managed scripts
 RUN mkdir -p /cadc
 
@@ -76,6 +81,12 @@ RUN curl https://cursor.com/install -fsS | bash \
 # --- Continue Extension (In-editor AI) ---
 # Open-source AI coding assistant that works with multiple LLM providers.
 RUN /opt/openvscode-server/bin/openvscode-server --install-extension continue.continue
+
+# --- Machine-level VS Code Settings ---
+# Configure terminal to use bash explicitly. On CANFAR, users have /sbin/nologin
+# in /etc/passwd, so we must override the terminal profile.
+RUN mkdir -p /opt/openvscode-server/data/Machine \
+    && printf '{\n  "terminal.integrated.defaultProfile.linux": "bash",\n  "terminal.integrated.profiles.linux": {\n    "bash": {\n      "path": "/bin/bash",\n      "args": ["-l"]\n    }\n  }\n}\n' > /opt/openvscode-server/data/Machine/settings.json
 
 # --- Startup Script ---
 # On CANFAR, the proxy does NOT strip the session path, so we must set
