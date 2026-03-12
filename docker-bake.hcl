@@ -1,4 +1,4 @@
-# docker-bake.hcl — Docker Bake Build Configuration
+# docker-bake.hcl — Docker Bake Build Configuration for CANFAR
 #
 # This file defines a multi-target build for the interactive CANFAR images
 # (terminal, webterm, jupyter-notebook, vscode). Run with: docker buildx bake
