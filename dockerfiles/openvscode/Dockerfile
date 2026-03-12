@@ -78,10 +78,11 @@ RUN curl https://cursor.com/install -fsS | bash \
 RUN /opt/openvscode-server/bin/openvscode-server --install-extension continue.continue
 
 # --- Startup Script ---
-# Minimal startup following the Marimo pattern. Port 5000, no auth,
-# serves from root since the CANFAR proxy strips the session path.
+# On CANFAR, the proxy does NOT strip the session path, so we must set
+# --server-base-path to match /session/contrib/<session-id>.
+# The skaha_sessionid env var is injected by the platform at runtime.
 # hadolint ignore=SC2016
-RUN printf '#!/bin/bash -e\nset -e\n\necho "[OpenVSCode] Starting OpenVSCode Server..."\n\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi"\ncd "${HOME}"\n\nexec /opt/openvscode-server/bin/openvscode-server \\\n  --host 0.0.0.0 \\\n  --port 5000 \\\n  --without-connection-token \\\n  --default-folder "${HOME}"\n' > /cadc/startup.sh \
+RUN printf '#!/bin/bash -e\nset -e\n\necho "[OpenVSCode] Starting OpenVSCode Server..."\n\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi"\ncd "${HOME}"\n\n# Build base path from session ID if available (CANFAR platform)\nBASE_PATH_ARG=""\nif [ -n "${skaha_sessionid:-}" ]; then\n  BASE_PATH_ARG="--server-base-path /session/contrib/${skaha_sessionid}"\n  echo "[OpenVSCode] Using base path: /session/contrib/${skaha_sessionid}"\nfi\n\nexec /opt/openvscode-server/bin/openvscode-server \\\n  --host 0.0.0.0 \\\n  --port 5000 \\\n  --without-connection-token \\\n  --default-folder "${HOME}" \\\n  ${BASE_PATH_ARG}\n' > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 # Create a non-root user for running locally.
