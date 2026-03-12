@@ -223,7 +223,7 @@ jobs:
           username: ${{ secrets.CANFAR_REGISTRY_USER }}
           password: ${{ secrets.CANFAR_REGISTRY_PASSWORD }}
       - name: Show targets to build
-        run: echo "Building targets: ${{ needs.detect-changes.outputs.bake_targets }}"
+        run: 'echo "Building targets: ${{ needs.detect-changes.outputs.bake_targets }}"'
       # Bake builds only the targets that changed.
       # We override the tags with the dynamically generated release tag.
       - name: Build and Push (Bake)
