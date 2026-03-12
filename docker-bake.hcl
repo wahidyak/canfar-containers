@@ -1,7 +1,7 @@
 # docker-bake.hcl — Docker Bake Build Configuration
 #
 # This file defines a multi-target build for the interactive CANFAR images
-# (terminal, webterm, jupyterlab, openvscode). Run with: docker buildx bake
+# (terminal, webterm, jupyter-notebook, vscode). Run with: docker buildx bake
 #
 # Bake builds all targets in the correct dependency order and, critically,
 # wires downstream images to use the locally-built terminal image as their base
@@ -25,7 +25,7 @@ variable "RELEASE_TAG" {
 
 # Default group: building with no target specified builds all interactive images
 group "default" {
-  targets = ["terminal", "webterm", "jupyterlab", "openvscode"]
+  targets = ["terminal", "webterm", "jupyter-notebook", "vscode"]
 }
 
 # Terminal image: interactive CLI environment built on Python 3.12
@@ -55,26 +55,26 @@ target "webterm" {
   }
 }
 
-# JupyterLab image: browser-based notebook environment built on top of terminal.
-target "jupyterlab" {
+# Jupyter Notebook image: browser-based notebook environment built on top of terminal.
+target "jupyter-notebook" {
   context = "./dockerfiles/jupyterlab"
   contexts = {
     "${REGISTRY}/cadc/terminal:${RELEASE_TAG}" = "target:terminal"
   }
-  tags = ["${REGISTRY}/cadc/jupyterlab:${RELEASE_TAG}"]
+  tags = ["${REGISTRY}/cadc/jupyter-notebook:${RELEASE_TAG}"]
   args = {
     REGISTRY = "${REGISTRY}"
     BASE_TAG = "${RELEASE_TAG}"
   }
 }
 
-# OpenVSCode Server image: browser-based VS Code IDE built on top of terminal.
-target "openvscode" {
+# VS Code image: browser-based VS Code IDE built on top of terminal.
+target "vscode" {
   context = "./dockerfiles/openvscode"
   contexts = {
     "${REGISTRY}/cadc/terminal:${RELEASE_TAG}" = "target:terminal"
   }
-  tags = ["${REGISTRY}/cadc/openvscode:${RELEASE_TAG}"]
+  tags = ["${REGISTRY}/cadc/vscode:${RELEASE_TAG}"]
   args = {
     REGISTRY = "${REGISTRY}"
     BASE_TAG = "${RELEASE_TAG}"

@@ -15,7 +15,7 @@
 #   On schedule/dispatch, all images are rebuilt to pick up upstream updates.
 #
 # Job dependency chain:
-#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (only changed targets)
+#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (terminal, webterm, jupyter-notebook, vscode)
 
 name: CANFAR Container Image Pipeline
 
@@ -66,8 +66,8 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       terminal: ${{ steps.filter.outputs.terminal }}
       webterm: ${{ steps.filter.outputs.webterm }}
-      jupyterlab: ${{ steps.filter.outputs.jupyterlab }}
-      openvscode: ${{ steps.filter.outputs.openvscode }}
+      jupyter-notebook: ${{ steps.filter.outputs.jupyter-notebook }}
+      vscode: ${{ steps.filter.outputs.vscode }}
       bake_targets: ${{ steps.targets.outputs.bake_targets }}
     steps:
       - uses: actions/checkout@v4
@@ -79,8 +79,8 @@ jobs:
           echo "python=true" >> $GITHUB_OUTPUT
           echo "terminal=true" >> $GITHUB_OUTPUT
           echo "webterm=true" >> $GITHUB_OUTPUT
-          echo "jupyterlab=true" >> $GITHUB_OUTPUT
-          echo "openvscode=true" >> $GITHUB_OUTPUT
+          echo "jupyter-notebook=true" >> $GITHUB_OUTPUT
+          echo "vscode=true" >> $GITHUB_OUTPUT
       # On push/PR, detect which files changed
       - name: Detect changed paths
         if: github.event_name == 'push' || github.event_name == 'pull_request'
@@ -94,9 +94,9 @@ jobs:
               - 'dockerfiles/terminal/**'
             webterm:
               - 'dockerfiles/webterm/**'
-            jupyterlab:
+            jupyter-notebook:
               - 'dockerfiles/jupyterlab/**'
-            openvscode:
+            vscode:
               - 'dockerfiles/openvscode/**'
             bake-config:
               - 'docker-bake.hcl'
@@ -109,8 +109,8 @@ jobs:
             echo "python=true" >> $GITHUB_OUTPUT
             echo "terminal=true" >> $GITHUB_OUTPUT
             echo "webterm=true" >> $GITHUB_OUTPUT
-            echo "jupyterlab=true" >> $GITHUB_OUTPUT
-            echo "openvscode=true" >> $GITHUB_OUTPUT
+            echo "jupyter-notebook=true" >> $GITHUB_OUTPUT
+            echo "vscode=true" >> $GITHUB_OUTPUT
           else
             # Python changes only affect python images
             echo "python=${{ steps.changes.outputs.python }}" >> $GITHUB_OUTPUT
@@ -120,13 +120,13 @@ jobs:
             if [[ "$TERMINAL" == "true" || "$BAKE_CONFIG" == "true" ]]; then
               echo "terminal=true" >> $GITHUB_OUTPUT
               echo "webterm=true" >> $GITHUB_OUTPUT
-              echo "jupyterlab=true" >> $GITHUB_OUTPUT
-              echo "openvscode=true" >> $GITHUB_OUTPUT
+              echo "jupyter-notebook=true" >> $GITHUB_OUTPUT
+              echo "vscode=true" >> $GITHUB_OUTPUT
             else
               echo "terminal=false" >> $GITHUB_OUTPUT
               echo "webterm=${{ steps.changes.outputs.webterm }}" >> $GITHUB_OUTPUT
-              echo "jupyterlab=${{ steps.changes.outputs.jupyterlab }}" >> $GITHUB_OUTPUT
-              echo "openvscode=${{ steps.changes.outputs.openvscode }}" >> $GITHUB_OUTPUT
+              echo "jupyter-notebook=${{ steps.changes.outputs.jupyter-notebook }}" >> $GITHUB_OUTPUT
+              echo "vscode=${{ steps.changes.outputs.vscode }}" >> $GITHUB_OUTPUT
             fi
           fi
       # Build the list of bake targets to build
@@ -140,11 +140,11 @@ jobs:
           if [[ "${{ steps.filter.outputs.webterm }}" == "true" ]]; then
             TARGETS="$TARGETS webterm"
           fi
-          if [[ "${{ steps.filter.outputs.jupyterlab }}" == "true" ]]; then
-            TARGETS="$TARGETS jupyterlab"
+          if [[ "${{ steps.filter.outputs.jupyter-notebook }}" == "true" ]]; then
+            TARGETS="$TARGETS jupyter-notebook"
           fi
-          if [[ "${{ steps.filter.outputs.openvscode }}" == "true" ]]; then
-            TARGETS="$TARGETS openvscode"
+          if [[ "${{ steps.filter.outputs.vscode }}" == "true" ]]; then
+            TARGETS="$TARGETS vscode"
           fi
           # Trim leading/trailing whitespace
           TARGETS=$(echo "$TARGETS" | xargs)
