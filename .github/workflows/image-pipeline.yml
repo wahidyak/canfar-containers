@@ -129,7 +129,7 @@ jobs:
               echo "vscode=${{ steps.changes.outputs.vscode }}" >> $GITHUB_OUTPUT
             fi
           fi
-      # Build the list of bake targets to build
+      # Build the list of bake targets to build (newline-separated for bake-action)
       - name: Determine bake targets
         id: targets
         run: |
@@ -138,18 +138,20 @@ jobs:
             TARGETS="terminal"
           fi
           if [[ "${{ steps.filter.outputs.webterm }}" == "true" ]]; then
-            TARGETS="$TARGETS webterm"
+            TARGETS="${TARGETS:+$TARGETS$'\n'}webterm"
           fi
           if [[ "${{ steps.filter.outputs.jupyter-notebook }}" == "true" ]]; then
-            TARGETS="$TARGETS jupyter-notebook"
+            TARGETS="${TARGETS:+$TARGETS$'\n'}jupyter-notebook"
           fi
           if [[ "${{ steps.filter.outputs.vscode }}" == "true" ]]; then
-            TARGETS="$TARGETS vscode"
+            TARGETS="${TARGETS:+$TARGETS$'\n'}vscode"
           fi
-          # Trim leading/trailing whitespace
-          TARGETS=$(echo "$TARGETS" | xargs)
-          echo "bake_targets=$TARGETS" >> $GITHUB_OUTPUT
-          echo "Bake targets to build: $TARGETS"
+          # Output as multiline string for bake-action
+          echo "bake_targets<<EOF" >> $GITHUB_OUTPUT
+          echo "$TARGETS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "Bake targets to build:"
+          echo "$TARGETS"
 
   # --- Job 0: Lint ---
   # Runs hadolint on all Dockerfiles to enforce best practices.
