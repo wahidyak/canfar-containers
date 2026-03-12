@@ -57,23 +57,6 @@ RUN ARCH=$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/') \
     && mv "/opt/openvscode-server-${OPENVSCODE_VERSION}-linux-${ARCH}" /opt/openvscode-server \
     && ln -s /opt/openvscode-server/bin/openvscode-server /usr/local/bin/openvscode-server
 
-# --- VS Code Extensions for CANFAR Users ---
-# Pre-install extensions to a system-wide shared location so they're available
-# to all users (CANFAR injects different users at runtime).
-# Use /usr/share/openvscode-extensions to avoid conflicting with bundled extensions.
-ENV OPENVSCODE_SERVER_ROOT=/opt/openvscode-server
-ENV OPENVSCODE_EXTENSIONS=/usr/share/openvscode-extensions
-RUN mkdir -p ${OPENVSCODE_EXTENSIONS} \
-    && /opt/openvscode-server/bin/openvscode-server --extensions-dir=${OPENVSCODE_EXTENSIONS} --install-extension ms-python.python \
-    && /opt/openvscode-server/bin/openvscode-server --extensions-dir=${OPENVSCODE_EXTENSIONS} --install-extension ms-toolsai.jupyter \
-    && /opt/openvscode-server/bin/openvscode-server --extensions-dir=${OPENVSCODE_EXTENSIONS} --install-extension charliermarsh.ruff \
-    && /opt/openvscode-server/bin/openvscode-server --extensions-dir=${OPENVSCODE_EXTENSIONS} --install-extension eamodio.gitlens \
-    && /opt/openvscode-server/bin/openvscode-server --extensions-dir=${OPENVSCODE_EXTENSIONS} --install-extension mhutchie.git-graph \
-    && /opt/openvscode-server/bin/openvscode-server --extensions-dir=${OPENVSCODE_EXTENSIONS} --install-extension redhat.vscode-yaml \
-    && /opt/openvscode-server/bin/openvscode-server --extensions-dir=${OPENVSCODE_EXTENSIONS} --install-extension tamasfe.even-better-toml \
-    && /opt/openvscode-server/bin/openvscode-server --extensions-dir=${OPENVSCODE_EXTENSIONS} --install-extension continue.continue \
-    && chmod -R a+rX ${OPENVSCODE_EXTENSIONS}
-
 # --- Cursor CLI Agent ---
 # Cursor's AI terminal assistant for use in the integrated terminal.
 # Installed via its official script, then moved to a system-wide path.
@@ -108,9 +91,8 @@ RUN mkdir -p /opt/openvscode-server/data/Machine \
 # On CANFAR, the proxy does NOT strip the session path, so we must set
 # --server-base-path to match /session/contrib/<session-id>.
 # The skaha_sessionid env var is injected by the platform at runtime.
-# Extensions are loaded from the shared system-wide directory.
 # hadolint ignore=SC2016
-RUN printf '#!/bin/bash -e\nset -e\n\necho "[OpenVSCode] Starting OpenVSCode Server..."\n\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi"\ncd "${HOME}"\n\n# Build base path from session ID if available (CANFAR platform)\nBASE_PATH_ARG=""\nif [ -n "${skaha_sessionid:-}" ]; then\n  BASE_PATH_ARG="--server-base-path /session/contrib/${skaha_sessionid}"\n  echo "[OpenVSCode] Using base path: /session/contrib/${skaha_sessionid}"\nfi\n\nexec /opt/openvscode-server/bin/openvscode-server \\\n  --host 0.0.0.0 \\\n  --port 5000 \\\n  --without-connection-token \\\n  --extensions-dir /usr/share/openvscode-extensions \\\n  --default-folder "${HOME}" \\\n  ${BASE_PATH_ARG}\n' > /cadc/startup.sh \
+RUN printf '#!/bin/bash -e\nset -e\n\necho "[OpenVSCode] Starting OpenVSCode Server..."\n\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi"\ncd "${HOME}"\n\n# Build base path from session ID if available (CANFAR platform)\nBASE_PATH_ARG=""\nif [ -n "${skaha_sessionid:-}" ]; then\n  BASE_PATH_ARG="--server-base-path /session/contrib/${skaha_sessionid}"\n  echo "[OpenVSCode] Using base path: /session/contrib/${skaha_sessionid}"\nfi\n\nexec /opt/openvscode-server/bin/openvscode-server \\\n  --host 0.0.0.0 \\\n  --port 5000 \\\n  --without-connection-token \\\n  --default-folder "${HOME}" \\\n  ${BASE_PATH_ARG}\n' > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 # Create a non-root user for running locally.
