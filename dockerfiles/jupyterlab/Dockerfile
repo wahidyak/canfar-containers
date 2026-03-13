@@ -27,12 +27,34 @@ LABEL description="CANFAR JupyterLab Notebook Environment" \
 # /cadc is the CANFAR platform convention for platform-managed scripts
 RUN mkdir -p /cadc
 
-# --- nginx for URL rewriting ---
-# The CANFAR proxy strips the session path, so we need nginx to:
-# 1. Accept requests at / (what the proxy sends)
-# 2. Proxy to JupyterLab (serving at /)
-# 3. Rewrite Location headers and HTML content to include session prefix
+# --- Pinned APT Package Versions ---
+# renovate: datasource=repology depName=debian_trixie/emacs versioning=deb
+ARG EMACS_VERSION=1:30.1+1-6
+# renovate: datasource=repology depName=debian_trixie/unzip versioning=deb
+ARG UNZIP_VERSION=6.0-29
+# renovate: datasource=repology depName=debian_trixie/nano versioning=deb
+ARG NANO_VERSION=8.4-1
+# renovate: datasource=repology depName=debian_trixie/tmux versioning=deb
+ARG TMUX_VERSION=3.5a-3
+# renovate: datasource=repology depName=debian_trixie/vim versioning=deb
+ARG VIM_VERSION=2:9.1.1230-2
+# renovate: datasource=repology depName=debian_trixie/procps versioning=deb
+ARG PROCPS_VERSION=2:4.0.4-9
+# renovate: datasource=repology depName=debian_trixie/nodejs versioning=deb
+ARG NODEJS_VERSION=20.19.2+dfsg-1
+# renovate: datasource=repology depName=debian_trixie/npm versioning=deb
+ARG NPM_VERSION=9.2.0~ds1-3
+
+# Install editors, terminal multiplexer, process tools, Node.js runtime, and nginx.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    emacs-nox=${EMACS_VERSION} \
+    unzip=${UNZIP_VERSION} \
+    nano=${NANO_VERSION} \
+    tmux=${TMUX_VERSION} \
+    vim-nox=${VIM_VERSION} \
+    procps=${PROCPS_VERSION} \
+    nodejs=${NODEJS_VERSION} \
+    npm=${NPM_VERSION} \
     nginx \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /var/lib/nginx/body /var/lib/nginx/proxy /var/lib/nginx/fastcgi /var/lib/nginx/scgi /var/lib/nginx/uwsgi \
