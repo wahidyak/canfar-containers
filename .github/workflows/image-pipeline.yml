@@ -15,7 +15,7 @@
 #   On schedule/dispatch, all images are rebuilt to pick up upstream updates.
 #
 # Job dependency chain:
-#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (terminal, webterm, jupyter-notebook, vscode)
+#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (terminal, webterm, jupyter-notebook, vscode, marimo)
 
 name: CANFAR Container Image Pipeline
 
@@ -68,6 +68,7 @@ jobs:
       webterm: ${{ steps.filter.outputs.webterm }}
       jupyter-notebook: ${{ steps.filter.outputs.jupyter-notebook }}
       vscode: ${{ steps.filter.outputs.vscode }}
+      marimo: ${{ steps.filter.outputs.marimo }}
       bake_targets: ${{ steps.targets.outputs.bake_targets }}
     steps:
       - uses: actions/checkout@v4
@@ -81,6 +82,7 @@ jobs:
           echo "webterm=true" >> $GITHUB_OUTPUT
           echo "jupyter-notebook=true" >> $GITHUB_OUTPUT
           echo "vscode=true" >> $GITHUB_OUTPUT
+          echo "marimo=true" >> $GITHUB_OUTPUT
       # On push/PR, detect which files changed
       - name: Detect changed paths
         if: github.event_name == 'push' || github.event_name == 'pull_request'
@@ -98,6 +100,8 @@ jobs:
               - 'dockerfiles/jupyterlab/**'
             vscode:
               - 'dockerfiles/openvscode/**'
+            marimo:
+              - 'dockerfiles/marimo/**'
             bake-config:
               - 'docker-bake.hcl'
       # Combine results: respect dependency chain (terminal -> downstream)
@@ -111,6 +115,7 @@ jobs:
             echo "webterm=true" >> $GITHUB_OUTPUT
             echo "jupyter-notebook=true" >> $GITHUB_OUTPUT
             echo "vscode=true" >> $GITHUB_OUTPUT
+            echo "marimo=true" >> $GITHUB_OUTPUT
           else
             # Python changes only affect python images
             echo "python=${{ steps.changes.outputs.python }}" >> $GITHUB_OUTPUT
@@ -122,11 +127,13 @@ jobs:
               echo "webterm=true" >> $GITHUB_OUTPUT
               echo "jupyter-notebook=true" >> $GITHUB_OUTPUT
               echo "vscode=true" >> $GITHUB_OUTPUT
+              echo "marimo=true" >> $GITHUB_OUTPUT
             else
               echo "terminal=false" >> $GITHUB_OUTPUT
               echo "webterm=${{ steps.changes.outputs.webterm }}" >> $GITHUB_OUTPUT
               echo "jupyter-notebook=${{ steps.changes.outputs.jupyter-notebook }}" >> $GITHUB_OUTPUT
               echo "vscode=${{ steps.changes.outputs.vscode }}" >> $GITHUB_OUTPUT
+              echo "marimo=${{ steps.changes.outputs.marimo }}" >> $GITHUB_OUTPUT
             fi
           fi
       # Build the list of bake targets to build (newline-separated for bake-action)
@@ -145,6 +152,9 @@ jobs:
           fi
           if [[ "${{ steps.filter.outputs.vscode }}" == "true" ]]; then
             TARGETS="${TARGETS:+$TARGETS$'\n'}vscode"
+          fi
+          if [[ "${{ steps.filter.outputs.marimo }}" == "true" ]]; then
+            TARGETS="${TARGETS:+$TARGETS$'\n'}marimo"
           fi
           # Output as multiline string for bake-action
           echo "bake_targets<<EOF" >> $GITHUB_OUTPUT
@@ -203,10 +213,10 @@ jobs:
           cache-to: type=gha,mode=max
 
   # --- Job 2: Interactive Stack (Bake Build) ---
-  # Builds only the changed targets using Docker Bake.
-  # Bake ensures the terminal image is built first and used as the base for
-  # downstream images, maintaining the dependency chain without pushing intermediates.
-  # Skipped if no interactive stack files changed.
+# Builds only the changed targets using Docker Bake (terminal, webterm, jupyter-notebook, vscode, marimo).
+# Bake ensures the terminal image is built first and used as the base for
+# downstream images, maintaining the dependency chain without pushing intermediates.
+# Skipped if no interactive stack files changed.
   interactive-stack:
     name: Interactive Stack
     needs: [setup, lint, detect-changes]

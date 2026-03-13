@@ -25,7 +25,7 @@ variable "RELEASE_TAG" {
 
 # Default group: building with no target specified builds all interactive images
 group "default" {
-  targets = ["terminal", "webterm", "jupyter-notebook", "vscode"]
+  targets = ["terminal", "webterm", "jupyter-notebook", "vscode", "marimo"]
 }
 
 # Terminal image: interactive CLI environment built on Python 3.12
@@ -75,6 +75,19 @@ target "vscode" {
     "${REGISTRY}/cadc/terminal:${RELEASE_TAG}" = "target:terminal"
   }
   tags = ["${REGISTRY}/cadc/vscode:${RELEASE_TAG}"]
+  args = {
+    REGISTRY = "${REGISTRY}"
+    BASE_TAG = "${RELEASE_TAG}"
+  }
+}
+
+# Marimo image: browser-based reactive notebooks built on top of terminal.
+target "marimo" {
+  context = "./dockerfiles/marimo"
+  contexts = {
+    "${REGISTRY}/cadc/terminal:${RELEASE_TAG}" = "target:terminal"
+  }
+  tags = ["${REGISTRY}/cadc/marimo:${RELEASE_TAG}"]
   args = {
     REGISTRY = "${REGISTRY}"
     BASE_TAG = "${RELEASE_TAG}"
