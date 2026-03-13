@@ -1,0 +1,118 @@
+version: 1
+registry:
+  host: oimages.canfar.net
+  project: cadc
+  image: webterm
+build:
+  context: .
+  file: Dockerfile
+  platforms:
+  - linux/amd64
+  - linux/arm64
+  tags:
+  - '2026.3'
+  output: type=docker
+  options: ''
+metadata:
+  discovery:
+    title: Web Terminal
+    description: ghhh
+    source: https://github.com/opencadc/canfar-containers
+    url: null
+    documentation: null
+    version: '2026.3'
+    revision: unknown
+    created: '2026-03-02T19:25:05.076375Z'
+    authors:
+    - name: Abdul-Wahid Yakubu
+      email: wahidyak@uvic.ca
+      role: maintainer
+      github: null
+      gitlab: null
+      orcid: null
+      affiliation: CADC
+    licenses: ''
+    keywords:
+    - tool
+    domain:
+    - development
+    kind:
+    - contributed
+    tools:
+    - ttyd
+    deprecated: false
+config:
+  policy: default
+  conflicts: warn
+  tools:
+  - id: default-linter
+    parser: hadolint
+    image: docker.io/hadolint/hadolint:latest
+    command:
+    - hadolint
+    - --config
+    - '{{inputs.hadolint}}'
+    - --format
+    - json
+    - '{{inputs.dockerfile}}'
+    env:
+      HADOLINT_CONFIG: /inputs/.hadolint.yaml
+    inputs:
+      hadolint:
+        source: default
+        destination: /inputs/.hadolint.yaml
+      dockerfile:
+        source: default
+        destination: /inputs/Dockerfile
+    socket: false
+    outputs: /outputs/
+  - id: default-scanner
+    parser: trivy
+    image: docker.io/aquasec/trivy:latest
+    command:
+    - image
+    - --config
+    - '{{inputs.trivy}}'
+    - --format
+    - json
+    - --output
+    - /outputs/scan.json
+    - --severity
+    - HIGH,CRITICAL
+    - --exit-code
+    - '1'
+    - --quiet
+    - --no-progress
+    - '{{image.reference}}'
+    env:
+      TRIVY_CACHE_DIR: /tmp/trivy-cache
+    inputs:
+      trivy:
+        source: default
+        destination: /inputs/.trivy.yaml
+    socket: true
+    outputs: /outputs/
+  - id: default-refurbisher
+    parser: renovate
+    image: docker.io/renovate/renovate:latest
+    command:
+    - sh
+    - -lc
+    - cd /repo && renovate --platform=local --require-config=ignored --dry-run=full
+      2>&1 | tee /outputs/refurbish.log
+    env:
+      LOG_FORMAT: json
+      LOG_LEVEL: debug
+    inputs:
+      renovate:
+        source: default
+        destination: /repo/renovate.json5
+      dockerfile:
+        source: default
+        destination: /repo/Dockerfile
+    socket: false
+    outputs: /outputs/
+  cli:
+    lint: default-linter
+    scan: default-scanner
+    refurbish: default-refurbisher
