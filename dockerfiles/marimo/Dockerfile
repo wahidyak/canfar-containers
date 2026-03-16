@@ -76,7 +76,7 @@ RUN uv pip install --system marimo==${MARIMO_VERSION}
 # --- Startup Script ---
 # Run Marimo directly on port 5000 (same pattern as working CANFAR Marimo: no nginx).
 # hadolint ignore=SC2016
-RUN printf '#!/bin/bash -e\nset -e\n\necho "[Marimo Startup] Starting Marimo server..."\n\nexec marimo --log-level INFO edit \\\n  --no-token \\\n  --port 5000 \\\n  --host 0.0.0.0 \\\n  --skip-update-check \\\n  --headless\n' > /cadc/startup.sh \
+RUN printf '#!/bin/bash -e\nset -e\n\necho "[Marimo Startup] Starting Marimo server..."\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi"\ncd "${HOME}"\n\nexec marimo --log-level INFO edit \\\n  --no-token \\\n  --port 5000 \\\n  --host 0.0.0.0 \\\n  --skip-update-check \\\n  --headless\n' > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
 # --- Build info (for inspection in running sessions, e.g. cat /build_info/Dockerfile) ---
