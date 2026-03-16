@@ -116,6 +116,12 @@ RUN mkdir -p /opt/openvscode-server/data/Machine \
 RUN printf '#!/bin/bash -e\nset -e\n\necho "[OpenVSCode] Starting OpenVSCode Server..."\n\nmkdir -p "${HOME}/.local/bin" "${HOME}/.cache/uv" "${HOME}/.pixi"\ncd "${HOME}"\n\n# Build base path from session ID if available (CANFAR platform)\nBASE_PATH_ARG=""\nif [ -n "${skaha_sessionid:-}" ]; then\n  BASE_PATH_ARG="--server-base-path /session/contrib/${skaha_sessionid}"\n  echo "[OpenVSCode] Using base path: /session/contrib/${skaha_sessionid}"\nfi\n\nexec /opt/openvscode-server/bin/openvscode-server \\\n  --host 0.0.0.0 \\\n  --port 5000 \\\n  --without-connection-token \\\n  --default-folder "${HOME}" \\\n  ${BASE_PATH_ARG}\n' > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
+# --- Build info (for inspection in running sessions, e.g. cat /build_info/Dockerfile) ---
+WORKDIR /build_info
+COPY Dockerfile /build_info/
+RUN uv pip freeze > /build_info/pip.list 2>/dev/null || true
+WORKDIR /tmp
+
 # Create a non-root user for running locally.
 # On CANFAR, the platform overrides the user at runtime.
 RUN useradd -m -s /bin/bash -u 1000 vscode

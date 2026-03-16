@@ -147,6 +147,12 @@ ttyd --writable --port 5000 -w \"\${HOME}\" \
 tmux new-session -A -s canfar\n" > /cadc/startup.sh \
     && chmod +x /cadc/startup.sh
 
+# --- Build info (for inspection in running sessions, e.g. cat /build_info/Dockerfile) ---
+WORKDIR /build_info
+COPY Dockerfile /build_info/
+RUN uv pip freeze > /build_info/pip.list 2>/dev/null || true
+WORKDIR /tmp
+
 EXPOSE 5000
 WORKDIR /tmp
 CMD ["/cadc/startup.sh"]
