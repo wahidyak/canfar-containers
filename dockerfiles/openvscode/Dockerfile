@@ -78,11 +78,6 @@ RUN ARCH=$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/') \
     && mv "/opt/openvscode-server-${OPENVSCODE_VERSION}-linux-${ARCH}" /opt/openvscode-server \
     && ln -s /opt/openvscode-server/bin/openvscode-server /usr/local/bin/openvscode-server
 
-# --- Favicon: ensure browser tab shows VS Code icon (not generic fallback) ---
-# OpenVSCode Server serves favicon from resources/server/. Overwrite with official VS Code icon.
-RUN curl -fsSL "https://github.com/microsoft/vscode/raw/main/resources/win32/code.ico" \
-    -o /opt/openvscode-server/resources/server/favicon.ico
-
 # --- Cursor CLI Agent ---
 # Cursor's AI terminal assistant for use in the integrated terminal.
 # Installed via its official script, then moved to a system-wide path.
