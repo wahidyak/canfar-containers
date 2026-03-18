@@ -72,9 +72,10 @@ RUN uv pip install --system \
 # --- Startup Script ---
 # Run JupyterLab on port 5000. On CANFAR (skaha_sessionid set), set base_url so
 # redirects and URLs include the session path and work behind the proxy.
-# hadolint ignore=SC2016
-RUN printf '#!/bin/bash -e\nset -e\n\necho "[JupyterLab] Starting JupyterLab server..."\n\n# #region agent log\necho "[DEBUG-19e980] skaha_sessionid=${skaha_sessionid:-NOT_SET}"\necho "[DEBUG-19e980] will set base_url when skaha_sessionid is set"\n# #endregion\n\nBASE_URL_ARGS=""\nif [ -n "${skaha_sessionid:-}" ]; then\n  BASE_URL_ARGS="--ServerApp.base_url=/session/contrib/${skaha_sessionid}/"\n  echo "[DEBUG-19e980] BASE_URL_ARGS=${BASE_URL_ARGS}"\nfi\nexec jupyter lab \\\n  --ServerApp.ip=0.0.0 \\\n  --ServerApp.port=5000 \\\n  --no-browser \\\n  --ServerApp.root_dir=/ \\\n  --ServerApp.allow_origin="*" \\\n  --ServerApp.allow_remote_access=True \\\n  --ServerApp.token="" \\\n  --ServerApp.password="" \\\n  --ServerApp.disable_check_xsrf=True \\\n  --ServerApp.log_level=DEBUG \\\n  '"'"'--ServerApp.terminado_settings={"shell_command": ["/bin/bash", "-l"]}'"'"' \\\n  ${BASE_URL_ARGS} \\\n  ${JUPYTERLAB_ARGS}\n' > /cadc/startup.sh \
-    && chmod +x /cadc/startup.sh
+# Session ID can come from skaha_sessionid env or from first argument ($1).
+# Ensures HOME, .token, .local, .cache/uv, .pixi exist for persistence.
+COPY startup.sh /cadc/startup.sh
+RUN chmod +x /cadc/startup.sh
 
 # --- JupyterLab Terminal Theme (Gruvbox) ---
 # Configure the terminal to match the webterm Gruvbox dark theme.
