@@ -16,13 +16,19 @@ SESSION_ID="${skaha_sessionid:-$1}"
 # #region agent log
 echo "[DEBUG-19e980] skaha_sessionid=${skaha_sessionid:-NOT_SET}"
 echo "[DEBUG-19e980] SESSION_ID=${SESSION_ID:-NOT_SET}"
-echo "[DEBUG-19e980] will set base_url when SESSION_ID is set"
+echo "[DEBUG-19e980] JUPYTER_SERVE_AT_ROOT=${JUPYTER_SERVE_AT_ROOT:-NOT_SET}"
+echo "[DEBUG-19e980] will set base_url when SESSION_ID is set and JUPYTER_SERVE_AT_ROOT is not 1"
 # #endregion
 
+# When the reverse proxy strips the path (forwards GET / instead of GET /session/contrib/ID/),
+# do not set base_url so Jupyter serves at / and those requests succeed. Set JUPYTER_SERVE_AT_ROOT=1
+# in the session environment when the proxy strips the path.
 BASE_URL_ARGS=""
-if [ -n "${SESSION_ID}" ]; then
+if [ -n "${SESSION_ID}" ] && [ "${JUPYTER_SERVE_AT_ROOT:-0}" != "1" ]; then
   BASE_URL_ARGS="--ServerApp.base_url=/session/contrib/${SESSION_ID}/"
   echo "[DEBUG-19e980] BASE_URL_ARGS=${BASE_URL_ARGS}"
+else
+  echo "[DEBUG-19e980] BASE_URL_ARGS=(none, serving at root)"
 fi
 
 exec jupyter lab \
