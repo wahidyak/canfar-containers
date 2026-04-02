@@ -46,7 +46,7 @@ ARG VIM_VERSION=2:9.1.1230-2
 # renovate: datasource=repology depName=debian_trixie/procps versioning=deb
 ARG PROCPS_VERSION=2:4.0.4-9
 # renovate: datasource=repology depName=debian_trixie/nodejs versioning=deb
-ARG NODEJS_VERSION=20.19.2+dfsg-1
+ARG NODEJS_VERSION=20.19.2+dfsg-1+deb13u2
 # renovate: datasource=repology depName=debian_trixie/npm versioning=deb
 ARG NPM_VERSION=9.2.0~ds1-3
 # renovate: datasource=repology depName=debian_trixie/jq versioning=deb
