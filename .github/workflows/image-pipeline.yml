@@ -15,7 +15,7 @@
 #   On schedule/dispatch, all images are rebuilt to pick up upstream updates.
 #
 # Job dependency chain:
-#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (terminal, webterm, jupyter-notebook, vscode, marimo)
+#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (terminal, webterm, vscode, marimo)
 
 name: CANFAR Container Image Pipeline
 
@@ -66,7 +66,6 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       terminal: ${{ steps.filter.outputs.terminal }}
       webterm: ${{ steps.filter.outputs.webterm }}
-      jupyter-notebook: ${{ steps.filter.outputs.jupyter-notebook }}
       vscode: ${{ steps.filter.outputs.vscode }}
       marimo: ${{ steps.filter.outputs.marimo }}
       bake_targets: ${{ steps.targets.outputs.bake_targets }}
@@ -80,7 +79,6 @@ jobs:
           echo "python=true" >> $GITHUB_OUTPUT
           echo "terminal=true" >> $GITHUB_OUTPUT
           echo "webterm=true" >> $GITHUB_OUTPUT
-          echo "jupyter-notebook=true" >> $GITHUB_OUTPUT
           echo "vscode=true" >> $GITHUB_OUTPUT
           echo "marimo=true" >> $GITHUB_OUTPUT
       # On push/PR, detect which files changed
@@ -96,8 +94,6 @@ jobs:
               - 'dockerfiles/terminal/**'
             webterm:
               - 'dockerfiles/webterm/**'
-            jupyter-notebook:
-              - 'dockerfiles/jupyterlab/**'
             vscode:
               - 'dockerfiles/openvscode/**'
             marimo:
@@ -113,7 +109,6 @@ jobs:
             echo "python=true" >> $GITHUB_OUTPUT
             echo "terminal=true" >> $GITHUB_OUTPUT
             echo "webterm=true" >> $GITHUB_OUTPUT
-            echo "jupyter-notebook=true" >> $GITHUB_OUTPUT
             echo "vscode=true" >> $GITHUB_OUTPUT
             echo "marimo=true" >> $GITHUB_OUTPUT
           else
@@ -125,13 +120,11 @@ jobs:
             if [[ "$TERMINAL" == "true" || "$BAKE_CONFIG" == "true" ]]; then
               echo "terminal=true" >> $GITHUB_OUTPUT
               echo "webterm=true" >> $GITHUB_OUTPUT
-              echo "jupyter-notebook=true" >> $GITHUB_OUTPUT
               echo "vscode=true" >> $GITHUB_OUTPUT
               echo "marimo=true" >> $GITHUB_OUTPUT
             else
               echo "terminal=false" >> $GITHUB_OUTPUT
               echo "webterm=${{ steps.changes.outputs.webterm }}" >> $GITHUB_OUTPUT
-              echo "jupyter-notebook=${{ steps.changes.outputs.jupyter-notebook }}" >> $GITHUB_OUTPUT
               echo "vscode=${{ steps.changes.outputs.vscode }}" >> $GITHUB_OUTPUT
               echo "marimo=${{ steps.changes.outputs.marimo }}" >> $GITHUB_OUTPUT
             fi
@@ -146,9 +139,6 @@ jobs:
           fi
           if [[ "${{ steps.filter.outputs.webterm }}" == "true" ]]; then
             TARGETS="${TARGETS:+$TARGETS$'\n'}webterm"
-          fi
-          if [[ "${{ steps.filter.outputs.jupyter-notebook }}" == "true" ]]; then
-            TARGETS="${TARGETS:+$TARGETS$'\n'}jupyter-notebook"
           fi
           if [[ "${{ steps.filter.outputs.vscode }}" == "true" ]]; then
             TARGETS="${TARGETS:+$TARGETS$'\n'}vscode"
@@ -213,7 +203,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   # --- Job 2: Interactive Stack (Bake Build) ---
-# Builds only the changed targets using Docker Bake (terminal, webterm, jupyter-notebook, vscode, marimo).
+# Builds only the changed targets using Docker Bake (terminal, webterm, vscode, marimo).
 # Bake ensures the terminal image is built first and used as the base for
 # downstream images, maintaining the dependency chain without pushing intermediates.
 # Skipped if no interactive stack files changed.

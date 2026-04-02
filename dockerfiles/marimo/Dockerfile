@@ -2,7 +2,7 @@
 #
 # CANFAR Marimo Image (Browser-based Reactive Notebooks)
 #
-# Sibling to jupyterlab in the CANFAR container stack. Inherits from the
+# Sibling to webterm and openvscode in the CANFAR container stack. Inherits from the
 # terminal image and adds Marimo as the browser-facing service on port 5000
 # (the CANFAR contributed session convention).
 #

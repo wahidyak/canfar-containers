@@ -42,7 +42,6 @@ Images must be built and pushed in sequence to maintain the dependency chain.
 - `/dockerfiles/python`: Python foundation (Inherits from `python:slim`).
 - `/dockerfiles/terminal`: Layer 3: Interactive CLI environment.
 - `/dockerfiles/webterm`: Layer 4: Web-based terminal (includes OpenCode AI).
-- `/dockerfiles/jupyterlab`: JupyterLab notebook image (tagged as jupyter-notebook).
 - `/dockerfiles/openvscode`: VS Code in browser image (tagged as vscode).
 - `/dockerfiles/marimo`: Marimo reactive notebook image.
 - `/doc`: Project documentation.

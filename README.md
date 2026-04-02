@@ -15,7 +15,6 @@ canfar-containers/
     ├── python/         # Python Foundation (Official Slim)
     ├── terminal/       # Interactive CLI environment
     ├── webterm/        # Web-based terminal (ttyd + Starship + OpenCode AI)
-    ├── jupyterlab/     # JupyterLab notebook (jupyter-notebook image)
     ├── openvscode/     # VS Code in browser (vscode image)
     └── marimo/         # Marimo reactive notebooks
 ```
@@ -41,15 +40,11 @@ The images follow a modular layered model. All images are hosted at `images.canf
    - **Editors**: `vim`, `emacs`, `nano`, `tmux`
    - **AI**: Integrated **OpenCode AI** CLI (`oc` alias)
 
-4. **Jupyter Notebook Image (`jupyter-notebook`)**:
-   - **Inherits**: `terminal`
-   - **UI**: JupyterLab on port 5000
-
-5. **VS Code Image (`vscode`)**:
+4. **VS Code Image (`vscode`)**:
    - **Inherits**: `terminal`
    - **UI**: Open VS Code (browser) on port 5000
 
-6. **Marimo Image (`marimo`)**:
+5. **Marimo Image (`marimo`)**:
    - **Inherits**: `terminal`
    - **UI**: Marimo reactive notebooks on port 5000
 
@@ -60,10 +55,10 @@ The entire image stack is automated via GitHub Actions. The pipeline maintains a
 1. **Python Layer**: Builds versions 3.10–3.14.
 2. **Terminal Layer**: Inherits from Python 3.12.
 3. **Webterm Layer**: Inherits from Terminal.
-4. **Interactive stack** (jupyter-notebook, vscode, marimo): Each inherits from Terminal and is built via Docker Bake.
+4. **Interactive stack** (vscode, marimo): Each inherits from Terminal and is built via Docker Bake.
 
 **Release Tagging:**
-The downstream images (`terminal`, `webterm`, `jupyter-notebook`, `vscode`, `marimo`) are tagged with the current release version (e.g., `26.02`).
+The downstream images (`terminal`, `webterm`, `vscode`, `marimo`) are tagged with the current release version (e.g., `26.02`).
 
 **Manual Trigger:**
 While automated on push to `main`, the workflow can also be triggered manually via GitHub's "Actions" tab.

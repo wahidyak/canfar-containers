@@ -1,7 +1,7 @@
 # docker-bake.hcl — Docker Bake Build Configuration for CANFAR
 #
 # This file defines a multi-target build for the interactive CANFAR images
-# (terminal, webterm, jupyter-notebook, vscode). Run with: docker buildx bake
+# (terminal, webterm, vscode, marimo). Run with: docker buildx bake
 #
 # Bake builds all targets in the correct dependency order and, critically,
 # wires downstream images to use the locally-built terminal image as their base
@@ -25,7 +25,7 @@ variable "RELEASE_TAG" {
 
 # Default group: building with no target specified builds all interactive images
 group "default" {
-  targets = ["terminal", "webterm", "jupyter-notebook", "vscode", "marimo"]
+  targets = ["terminal", "webterm", "vscode", "marimo"]
 }
 
 # Terminal image: interactive CLI environment built on Python 3.12
@@ -49,19 +49,6 @@ target "webterm" {
     "${REGISTRY}/cadc/terminal:${RELEASE_TAG}" = "target:terminal"
   }
   tags = ["${REGISTRY}/cadc/webterm:${RELEASE_TAG}"]
-  args = {
-    REGISTRY = "${REGISTRY}"
-    BASE_TAG = "${RELEASE_TAG}"
-  }
-}
-
-# Jupyter Notebook image: browser-based notebook environment built on top of terminal.
-target "jupyter-notebook" {
-  context = "./dockerfiles/jupyterlab"
-  contexts = {
-    "${REGISTRY}/cadc/terminal:${RELEASE_TAG}" = "target:terminal"
-  }
-  tags = ["${REGISTRY}/cadc/jupyter-notebook:${RELEASE_TAG}"]
   args = {
     REGISTRY = "${REGISTRY}"
     BASE_TAG = "${RELEASE_TAG}"
