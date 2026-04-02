@@ -1,11 +1,36 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "_comment": "Renovate Bot config — automatically opens PRs when dependencies have newer versions. Scans '# renovate:' comments in Dockerfiles to track base images (Docker Hub, GHCR) and APT packages (Repology/Debian Trixie). Runs monthly to align with the scheduled CI rebuild.",
   "extends": [
     "config:recommended"
   ],
   "schedule": [
     "on the first day of the month"
   ],
-  "timezone": "UTC"
+  "timezone": "UTC",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Dockerfile ARG pins preceded by # renovate: (datasource + depName + optional versioning)",
+      "managerFilePatterns": [
+        "/(^|/|\\.)([Dd]ocker|[Cc]ontainer)file$/",
+        "/(^|/)([Dd]ocker|[Cc]ontainer)file[^/]*$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s*(?:\\r\\n|\\n|\\r)ARG [A-Z0-9_]+=(?<currentValue>[^\\r\\n]+)"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "PyPI versions in Dockerfiles follow PEP 440 (comments omit explicit versioning=)",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "versioning": "pep440"
+    }
+  ]
 }

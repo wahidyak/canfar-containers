@@ -39,7 +39,7 @@ ARG GIT_VERSION=1:2.47.3-0+deb13u1
 # renovate: datasource=repology depName=debian_trixie/htop versioning=deb
 ARG HTOP_VERSION=3.4.1-5
 # renovate: datasource=repology depName=debian_trixie/locales versioning=deb
-ARG LOCALES_VERSION=2.41-12+deb13u1
+ARG LOCALES_VERSION=2.41-12+deb13u2
 # renovate: datasource=repology depName=debian_trixie/wget versioning=deb
 ARG WGET_VERSION=1.25.0-2
 
