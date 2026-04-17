@@ -77,6 +77,21 @@ The monthly cron only refreshes the parts of each image that are *not* explicitl
 
 In practice that means **Renovate and the monthly cron are complementary**: Renovate keeps the pins from going stale by opening PRs against `main` (scheduled on the 1st of each month, same cadence as the cron), and the cron publishes a fresh `YY.MM` tag from whatever is on `main` at the time. If Renovate PRs are reviewed and merged before the cron fires, that month's tag ships with both the latest pins and the latest upstream patches. If they aren't merged, the tag still ships — just with last month's pins plus any unpinned upstream updates.
 
+### Pinning philosophy
+
+Not every `apt` package in the Dockerfiles is pinned to an exact version, and this is deliberate. Packages fall into two categories:
+
+- **Version-tracked (pinned).** An `ARG <NAME>_VERSION=…` declaration with a `# renovate: datasource=repology depName=debian_13/<pkg> versioning=deb` annotation above it, referenced in the `apt-get install` line as `<pkg>=${<NAME>_VERSION}`. Renovate opens a PR to bump the version whenever Repology reports a newer Debian 13 release. Use this for anything where reproducible builds across time actually matter — CLI tools, language runtimes, applications with behavior that can change between versions (`git`, `curl`, `nodejs`, `emacs`, etc.).
+- **Unpinned-by-design.** The package is listed in `apt-get install` with no version suffix and no `ARG`. Use this for binary packages that Repology doesn't expose as their own project — typically libraries distributed from a differently-named source package (e.g. `locales` ships from `glibc`, `libatomic1` ships from `gcc-14`). Pinning them to an exact Debian version string (`2.41-12+deb13u2`, `14.2.0-19`) provides little real reproducibility benefit since they're ABI-stable runtime components, and actively causes build failures when the Debian mirror rolls past the pinned version. Each unpinned package has an inline comment explaining the decision.
+
+**How to tell which category a new package falls into:** query the Repology API before adding a pin.
+
+```
+curl -sS "https://repology.org/api/v1/project/<pkgname>" | jq '.[] | select(.repo == "debian_13")'
+```
+
+If entries come back with an `origversion` matching the Debian package-version format (e.g. `8.14.1-2+deb13u2`), pin it. If nothing comes back, the package is a binary alias — install it unpinned with a comment, and don't add a `# renovate:` annotation (Renovate would report `no-result` on every run).
+
 ## Maintenance
 
 - **Git Flow**: This repository uses a feature-branch workflow. Please fork the repository and submit a Pull Request for any changes to be merged into the main branch.
