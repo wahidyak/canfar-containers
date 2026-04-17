@@ -33,27 +33,30 @@ ENV SHELL=/bin/bash
 RUN mkdir -p /cadc
 
 # --- Pinned APT Package Versions ---
-# renovate: datasource=repology depName=debian_trixie/emacs versioning=deb
+# renovate: datasource=repology depName=debian_13/emacs versioning=deb
 ARG EMACS_VERSION=1:30.1+1-6
-# renovate: datasource=repology depName=debian_trixie/unzip versioning=deb
+# renovate: datasource=repology depName=debian_13/unzip versioning=deb
 ARG UNZIP_VERSION=6.0-29
-# renovate: datasource=repology depName=debian_trixie/nano versioning=deb
+# renovate: datasource=repology depName=debian_13/nano versioning=deb
 ARG NANO_VERSION=8.4-1
-# renovate: datasource=repology depName=debian_trixie/tmux versioning=deb
+# renovate: datasource=repology depName=debian_13/tmux versioning=deb
 ARG TMUX_VERSION=3.5a-3
-# renovate: datasource=repology depName=debian_trixie/vim versioning=deb
+# renovate: datasource=repology depName=debian_13/vim versioning=deb
 ARG VIM_VERSION=2:9.1.1230-2
-# renovate: datasource=repology depName=debian_trixie/procps versioning=deb
+# renovate: datasource=repology depName=debian_13/procps versioning=deb
 ARG PROCPS_VERSION=2:4.0.4-9
-# renovate: datasource=repology depName=debian_trixie/nodejs versioning=deb
+# renovate: datasource=repology depName=debian_13/nodejs versioning=deb
 ARG NODEJS_VERSION=20.19.2+dfsg-1+deb13u2
-# renovate: datasource=repology depName=debian_trixie/npm versioning=deb
+# renovate: datasource=repology depName=debian_13/npm versioning=deb
 ARG NPM_VERSION=9.2.0~ds1-3
-# renovate: datasource=repology depName=debian_trixie/jq versioning=deb
+# renovate: datasource=repology depName=debian_13/jq versioning=deb
 ARG JQ_VERSION=1.7.1-6+deb13u1
-# renovate: datasource=repology depName=debian_trixie/libatomic1 versioning=deb
-ARG LIBATOMIC1_VERSION=14.2.0-19
 
+# libatomic1 is a runtime shim from the gcc-14 source package and is not
+# exposed as its own project in Repology, so Renovate can't track it via
+# the repology datasource. It's an ABI-stable libgcc helper; leaving it
+# unpinned lets apt install whatever Debian ships and avoids the
+# "version no longer available" failure when the mirror rolls forward.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     emacs-nox=${EMACS_VERSION} \
     unzip=${UNZIP_VERSION} \
@@ -64,7 +67,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs=${NODEJS_VERSION} \
     npm=${NPM_VERSION} \
     jq=${JQ_VERSION} \
-    libatomic1=${LIBATOMIC1_VERSION} \
+    libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # --- OpenVSCode Server ---
