@@ -26,21 +26,21 @@ LABEL description="Standard CANFAR Terminal CLI Environment" \
 # newer versions. The datasource is "repology" (a cross-distro package tracker)
 # and the target distro is Debian Trixie (the base of python:slim).
 
-# renovate: datasource=repology depName=debian_trixie/acl versioning=deb
+# renovate: datasource=repology depName=debian_13/acl versioning=deb
 ARG ACL_VERSION=2.3.2-2+b1
-# renovate: datasource=repology depName=debian_trixie/bash-completion versioning=deb
+# renovate: datasource=repology depName=debian_13/bash-completion versioning=deb
 ARG BASH_COMPLETION_VERSION=1:2.16.0-7
-# renovate: datasource=repology depName=debian_trixie/ca-certificates versioning=deb
+# renovate: datasource=repology depName=debian_13/ca-certificates versioning=deb
 ARG CA_CERTIFICATES_VERSION=20250419
-# renovate: datasource=repology depName=debian_trixie/curl versioning=deb
+# renovate: datasource=repology depName=debian_13/curl versioning=deb
 ARG CURL_VERSION=8.14.1-2+deb13u2
-# renovate: datasource=repology depName=debian_trixie/git versioning=deb
+# renovate: datasource=repology depName=debian_13/git versioning=deb
 ARG GIT_VERSION=1:2.47.3-0+deb13u1
-# renovate: datasource=repology depName=debian_trixie/htop versioning=deb
+# renovate: datasource=repology depName=debian_13/htop versioning=deb
 ARG HTOP_VERSION=3.4.1-5
-# renovate: datasource=repology depName=debian_trixie/locales versioning=deb
+# renovate: datasource=repology depName=debian_13/locales versioning=deb
 ARG LOCALES_VERSION=2.41-12+deb13u2
-# renovate: datasource=repology depName=debian_trixie/wget versioning=deb
+# renovate: datasource=repology depName=debian_13/wget versioning=deb
 ARG WGET_VERSION=1.25.0-2
 
 # Install all CLI tools in a single RUN to minimize layers.
