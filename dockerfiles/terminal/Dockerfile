@@ -38,8 +38,6 @@ ARG CURL_VERSION=8.14.1-2+deb13u2
 ARG GIT_VERSION=1:2.47.3-0+deb13u1
 # renovate: datasource=repology depName=debian_13/htop versioning=deb
 ARG HTOP_VERSION=3.4.1-5
-# renovate: datasource=repology depName=debian_13/locales versioning=deb
-ARG LOCALES_VERSION=2.41-12+deb13u2
 # renovate: datasource=repology depName=debian_13/wget versioning=deb
 ARG WGET_VERSION=1.25.0-2
 
@@ -47,6 +45,12 @@ ARG WGET_VERSION=1.25.0-2
 # --no-install-recommends keeps the image lean.
 # APT lists are cleaned up in the same RUN to avoid bloating the layer.
 # The locale-gen at the end enables UTF-8 for proper Unicode support.
+#
+# locales is a binary package produced by the glibc source package and is
+# not exposed as its own project in Repology, so Renovate can't track it
+# via the repology datasource. It ships with glibc (ABI-stable) and is
+# left unpinned to avoid "version no longer available" failures when the
+# Debian mirror rolls forward.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     acl=${ACL_VERSION} \
     bash-completion=${BASH_COMPLETION_VERSION} \
@@ -54,7 +58,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl=${CURL_VERSION} \
     git=${GIT_VERSION} \
     htop=${HTOP_VERSION} \
-    locales=${LOCALES_VERSION} \
+    locales \
     wget=${WGET_VERSION} \
     && rm -rf /var/lib/apt/lists/* \
     && sed -i '/en_US.UTF-8 UTF-8/s/^# //g' /etc/locale.gen \
