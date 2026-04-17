@@ -30,10 +30,15 @@ on:
       - '.github/workflows/image-pipeline.yml'
       - 'docker-bake.hcl'
     branches: [main]
-  # On PRs, only lint (push guard below prevents building/pushing)
+  # On PRs, lint runs and affected images build (with push disabled).
+  # We include the workflow, bake config, and renovate config so that
+  # changes to any of them are validated before merge.
   pull_request:
     paths:
       - 'dockerfiles/**'
+      - '.github/workflows/image-pipeline.yml'
+      - 'docker-bake.hcl'
+      - 'renovate.json'
   # Allow manual trigger from GitHub Actions UI
   workflow_dispatch:
 
@@ -90,6 +95,8 @@ jobs:
           filters: |
             python:
               - 'dockerfiles/python/**'
+            python-terminal-base:
+              - 'dockerfiles/python/3.12/**'
             terminal:
               - 'dockerfiles/terminal/**'
             webterm:
@@ -112,12 +119,15 @@ jobs:
             echo "vscode=true" >> $GITHUB_OUTPUT
             echo "marimo=true" >> $GITHUB_OUTPUT
           else
-            # Python changes only affect python images
+            # Any python version change triggers a python-image rebuild
             echo "python=${{ steps.changes.outputs.python }}" >> $GITHUB_OUTPUT
-            # Terminal changes cascade to all downstream images
+            # The terminal image is FROM python:3.12, so changes to python/3.12
+            # must cascade into terminal (and therefore all downstream images).
+            # Changes to terminal itself or docker-bake.hcl also cascade.
             TERMINAL="${{ steps.changes.outputs.terminal }}"
+            PYTHON_BASE="${{ steps.changes.outputs.python-terminal-base }}"
             BAKE_CONFIG="${{ steps.changes.outputs.bake-config }}"
-            if [[ "$TERMINAL" == "true" || "$BAKE_CONFIG" == "true" ]]; then
+            if [[ "$TERMINAL" == "true" || "$PYTHON_BASE" == "true" || "$BAKE_CONFIG" == "true" ]]; then
               echo "terminal=true" >> $GITHUB_OUTPUT
               echo "webterm=true" >> $GITHUB_OUTPUT
               echo "vscode=true" >> $GITHUB_OUTPUT
@@ -129,21 +139,35 @@ jobs:
               echo "marimo=${{ steps.changes.outputs.marimo }}" >> $GITHUB_OUTPUT
             fi
           fi
-      # Build the list of bake targets to build (newline-separated for bake-action)
+      # Build the list of bake targets to build (newline-separated for bake-action).
+      # Whenever any downstream image (webterm/vscode/marimo) is built, we also
+      # include terminal so bake can substitute the locally-built terminal via
+      # its "contexts" block. Otherwise bake would try to pull
+      # images.canfar.net/cadc/terminal:${RELEASE_TAG} from the registry, which
+      # fails on PRs (no registry login) and on scheduled runs where the
+      # current-month tag hasn't been pushed yet.
       - name: Determine bake targets
         id: targets
         run: |
+          WEBTERM="${{ steps.filter.outputs.webterm }}"
+          VSCODE="${{ steps.filter.outputs.vscode }}"
+          MARIMO="${{ steps.filter.outputs.marimo }}"
+          TERMINAL="${{ steps.filter.outputs.terminal }}"
+          # Force terminal in the build set whenever a downstream target is selected.
+          if [[ "$WEBTERM" == "true" || "$VSCODE" == "true" || "$MARIMO" == "true" ]]; then
+            TERMINAL="true"
+          fi
           TARGETS=""
-          if [[ "${{ steps.filter.outputs.terminal }}" == "true" ]]; then
+          if [[ "$TERMINAL" == "true" ]]; then
             TARGETS="terminal"
           fi
-          if [[ "${{ steps.filter.outputs.webterm }}" == "true" ]]; then
+          if [[ "$WEBTERM" == "true" ]]; then
             TARGETS="${TARGETS:+$TARGETS$'\n'}webterm"
           fi
-          if [[ "${{ steps.filter.outputs.vscode }}" == "true" ]]; then
+          if [[ "$VSCODE" == "true" ]]; then
             TARGETS="${TARGETS:+$TARGETS$'\n'}vscode"
           fi
-          if [[ "${{ steps.filter.outputs.marimo }}" == "true" ]]; then
+          if [[ "$MARIMO" == "true" ]]; then
             TARGETS="${TARGETS:+$TARGETS$'\n'}marimo"
           fi
           # Output as multiline string for bake-action

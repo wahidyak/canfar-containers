@@ -58,10 +58,24 @@ The entire image stack is automated via GitHub Actions. The pipeline maintains a
 4. **Interactive stack** (vscode, marimo): Each inherits from Terminal and is built via Docker Bake.
 
 **Release Tagging:**
-The downstream images (`terminal`, `webterm`, `vscode`, `marimo`) are tagged with the current release version (e.g., `26.02`).
+The downstream images (`terminal`, `webterm`, `vscode`, `marimo`) are tagged with the current release version (e.g., `26.02`). Python images are tagged by Python version only (e.g., `python:3.12`) and are overwritten in place on each rebuild.
 
-**Manual Trigger:**
-While automated on push to `main`, the workflow can also be triggered manually via GitHub's "Actions" tab.
+**Triggers:**
+The pipeline runs on four events:
+
+- **Scheduled**: 1st of every month at 06:00 UTC. All images rebuild to pick up upstream base-image and apt security updates.
+- **Push to `main`**: Selective rebuild based on which files changed. The dependency chain is respected — changes to `dockerfiles/python/3.12/` or `dockerfiles/terminal/` cascade into all downstream images.
+- **Pull requests**: Lint runs, plus affected images are built (with push disabled) so broken changes are caught before merge.
+- **Manual**: via GitHub's "Actions" tab (`workflow_dispatch`), same behavior as scheduled.
+
+### What the monthly rebuild actually refreshes
+
+The monthly cron only refreshes the parts of each image that are *not* explicitly pinned:
+
+- **Refreshed every month**: the Debian apt layer (security updates for `curl`, `git`, etc. that haven't been pinned to an exact version), any `pip install` / `npm install` without an explicit version, and upstream base-image layers that the maintainer has rebuilt.
+- **Not refreshed by the cron**: any dependency pinned via `ARG *_VERSION=…` with a `# renovate:` annotation, and any base image pinned by `@sha256:…` digest. These change only when a Renovate PR bumping the pin is merged into `main`.
+
+In practice that means **Renovate and the monthly cron are complementary**: Renovate keeps the pins from going stale by opening PRs against `main` (scheduled on the 1st of each month, same cadence as the cron), and the cron publishes a fresh `YY.MM` tag from whatever is on `main` at the time. If Renovate PRs are reviewed and merged before the cron fires, that month's tag ships with both the latest pins and the latest upstream patches. If they aren't merged, the tag still ships — just with last month's pins plus any unpinned upstream updates.
 
 ## Maintenance
 
