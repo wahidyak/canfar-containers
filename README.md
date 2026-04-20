@@ -95,3 +95,4 @@ If entries come back with an `origversion` matching the Debian package-version f
 ## Maintenance
 
 - **Git Flow**: This repository uses a feature-branch workflow. Please fork the repository and submit a Pull Request for any changes to be merged into the main branch.
+- **Operational details**: for the CI/CD job breakdown, external services, secret names, local build commands, and the procedure for adding a new image to the stack, see [`doc/HANDOFF.md`](doc/HANDOFF.md).
