@@ -33,8 +33,7 @@ canfar-containers/
     ├── terminal/Dockerfile
     ├── webterm/Dockerfile
     ├── openvscode/Dockerfile
-    ├── marimo/Dockerfile
-    └── jupyterlab/                       # See §8 "Known state" — present but not wired into CI
+    └── marimo/Dockerfile
 ```
 
 Each image directory contains exactly one `Dockerfile`. There are no
@@ -329,13 +328,6 @@ Concrete steps, derived from how the existing images are wired:
 These are observed as of this handoff. They are intentional mentions,
 not hidden problems.
 
-- **`dockerfiles/jupyterlab/`** exists in the repo but is not referenced
-  by `docker-bake.hcl` or the workflow. The most recent relevant commit
-  on `main` is `chore: remove jupyter-notebook image from stack`. The
-  directory appears to be a remnant — either delete it, or re-wire it
-  in if JupyterLab is meant to be part of the stack. No build will
-  produce a `cadc/jupyterlab` image until it is added to both the bake
-  file and the workflow's `detect-changes` job.
 - **`archive/`** contains `base/Dockerfile.retired` and `build.sh`. The
   shell script is a standalone manual build script that references an
   older five-layer hierarchy (`base`, `python`, `terminal`, `webterm`,
