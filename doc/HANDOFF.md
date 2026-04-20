@@ -21,7 +21,6 @@ canfar-containers/
 ├── .gitignore
 ├── .hadolint.yaml                        # Hadolint ignore list (DL3008, DL3013)
 ├── README.md                             # Architecture + user-facing docs
-├── agent.md                              # Instructions for AI coding assistants
 ├── docker-bake.hcl                       # Multi-target build config for the interactive stack
 ├── renovate.json                         # Renovate schedule + custom regex manager
 ├── archive/                              # Retired image definitions (not built by CI)
@@ -343,11 +342,6 @@ not hidden problems.
   `opencode`) that no longer corresponds to the current stack. It is
   not invoked by the workflow or referenced elsewhere in CI. Treat it
   as historical.
-- **`agent.md`** is instructions for AI coding assistants (Cursor,
-  Claude Code, etc.). It is out of sync in a few places with the
-  current stack (references to "opencode" as a separate image, to a
-  retired Ubuntu foundation). It does not affect the build; updating
-  or removing it is orthogonal to operational concerns.
 - **Two hadolint rules are globally ignored** (`DL3008`, `DL3013`) via
   `.hadolint.yaml`. The rationale is in the config file's comments:
   `DL3008` because some apt packages are deliberately unpinned
