@@ -54,4 +54,3 @@ ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python \
 ENV PIXI_HOME=/usr/local/share/pixi \
     PIXI_BIN_DIR=/usr/local/bin \
     PIXI_CACHE_DIR=/usr/local/share/pixi/cache
-
