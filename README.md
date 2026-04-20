@@ -9,7 +9,6 @@ canfar-containers/
 ├── README.md           # This file
 ├── .gitignore          # Git exclusion rules
 ├── .hadolint.yaml      # Hadolint (Dockerfile linter) configuration
-├── agent.md            # Guidance for AI coding assistants working on this repo
 ├── docker-bake.hcl     # Multi-target build definition for the interactive stack
 ├── renovate.json       # Renovate (dependency-update bot) configuration
 ├── archive/            # Retired image definitions (kept for historical reference; not built or published)
