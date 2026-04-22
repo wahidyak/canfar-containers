@@ -1,28 +1,47 @@
 # CANFAR Container Image Pipeline
 #
-# CI/CD workflow that lints, builds, and pushes the entire CANFAR container
-# stack to the CANFAR Harbor registry (images.canfar.net).
+# CI/CD workflow that lints, builds, and pushes the CANFAR container stack
+# to the CANFAR Harbor registry (images.canfar.net) on a staggered, tiered
+# monthly cadence.
+#
+# Release cadence (see doc/RELEASE-CADENCE.md for the full policy):
+#   Day 1 06:00 UTC - Python runtime images (3.10 - 3.14)
+#   Day 2 06:00 UTC - Terminal (depends on python:3.12)
+#   Day 3 06:00 UTC - Interactive stack (webterm, vscode, marimo, carta)
+#                     On success, a release/<YY.MM> git tag is created.
+#   Day 4           - Buffer / freeze, no publishes
+#   Days 5 - 27     - Merge window: Renovate opens PRs, humans merge freely.
+#                     PRs lint + build but do NOT push.
+#   Days 28 - end   - Soft freeze: no new Renovate PRs.
+#
+# An image is only rebuilt & republished on its release day if its Dockerfile
+# (or an upstream it depends on, or docker-bake.hcl) changed since the
+# release/<previous YY.MM> git tag. Unchanged images are skipped entirely --
+# EXCEPT when the previous release tag is older than FORCED_REBUILD_AGE_DAYS
+# (default 45), in which case every image in today's phase is rebuilt so
+# apt security patches eventually propagate even if no file change triggered
+# a Renovate PR. See the "Force rebuild on aging release tag" step.
 #
 # Trigger conditions:
-#   - Schedule: 1st of every month at 06:00 UTC (picks up upstream base image updates)
-#   - Push to main: only when Dockerfiles, this workflow, or bake config change
-#   - Pull requests: lint-only (no build/push) when Dockerfiles change
-#   - Manual: via GitHub Actions "Run workflow" button (workflow_dispatch)
-#
-# Selective builds:
-#   On push, only images whose Dockerfiles changed are rebuilt. The dependency
-#   chain is respected: if terminal changes, all downstream images rebuild.
-#   On schedule/dispatch, all images are rebuilt to pick up upstream updates.
+#   - Schedule: three separate crons for days 1, 2, 3 (06:00 UTC)
+#   - Push to main: selective rebuild with dependency cascade (no phase gate)
+#   - Pull requests: lint + build-only (no push)
+#   - workflow_dispatch: manual escape hatch; builds whatever the diff shows
+#     as changed across ALL phases, ignoring the day-of-month gate.
 #
 # Job dependency chain:
-#   lint -> python (matrix: 3.10-3.14) -> interactive-stack (terminal, webterm, vscode, marimo)
+#   setup + detect-changes + lint -> python (matrix) -> interactive-stack -> tag-release
 
 name: CANFAR Container Image Pipeline
 
 on:
-  # Monthly rebuild to pick up upstream security patches and base image updates
   schedule:
+    # Day 1: Python runtime matrix
     - cron: '0 6 1 * *'
+    # Day 2: Terminal base image
+    - cron: '0 6 2 * *'
+    # Day 3: Interactive stack (webterm, vscode, marimo, carta) + release tag
+    - cron: '0 6 3 * *'
   # On push to main, only rebuild when relevant files change
   push:
     paths:
@@ -31,25 +50,21 @@ on:
       - 'docker-bake.hcl'
     branches: [main]
   # On PRs, lint runs and affected images build (with push disabled).
-  # We include the workflow, bake config, and renovate config so that
-  # changes to any of them are validated before merge.
   pull_request:
     paths:
       - 'dockerfiles/**'
       - '.github/workflows/image-pipeline.yml'
       - 'docker-bake.hcl'
       - 'renovate.json'
-  # Allow manual trigger from GitHub Actions UI
+  # Manual escape hatch from GitHub Actions UI
   workflow_dispatch:
 
-# Global variables shared across all jobs
 env:
   REGISTRY: images.canfar.net
 
 jobs:
   # --- Job: Generate Tag ---
-  # Dynamically generates the monthly release tag (YY.MM format).
-  # This tag is shared with all downstream jobs.
+  # Generates the monthly release tag (YY.MM format). Shared with downstream jobs.
   setup:
     name: Generate Release Tag
     runs-on: ubuntu-24.04
@@ -58,12 +73,15 @@ jobs:
     steps:
       - name: Get current date
         id: date
-        run: echo "tag=$(date +'%y.%m')" >> $GITHUB_OUTPUT
+        run: echo "tag=$(date -u +'%y.%m')" >> $GITHUB_OUTPUT
 
   # --- Job: Detect Changes ---
-  # Determines which Dockerfiles changed to enable selective builds.
-  # Respects the dependency chain: terminal changes trigger downstream rebuilds.
-  # On schedule/dispatch, all targets are marked for rebuild.
+  # On schedule: diffs HEAD against the previous month's release/<YY.MM> git
+  # tag to decide which images have actually changed, then applies a phase
+  # gate so each day only emits its own subset.
+  # On push/PR: uses dorny/paths-filter to figure out what changed in the
+  # pushed commits, with the existing dependency cascade (no phase gate).
+  # On workflow_dispatch: uses the release-tag diff but no phase gate.
   detect-changes:
     name: Detect Changes
     runs-on: ubuntu-24.04
@@ -73,21 +91,133 @@ jobs:
       webterm: ${{ steps.filter.outputs.webterm }}
       vscode: ${{ steps.filter.outputs.vscode }}
       marimo: ${{ steps.filter.outputs.marimo }}
+      carta: ${{ steps.filter.outputs.carta }}
       bake_targets: ${{ steps.targets.outputs.bake_targets }}
+      phase: ${{ steps.phase.outputs.phase }}
     steps:
       - uses: actions/checkout@v4
-      # On schedule/dispatch, rebuild everything
-      - name: Force all targets on schedule/dispatch
-        id: force-all
+        with:
+          # Full history + tags so we can diff against last month's release tag
+          fetch-depth: 0
+
+      # Map today's cron schedule to a release phase (python / terminal /
+      # interactive). Only meaningful for schedule events.
+      - name: Determine release phase
+        id: phase
+        if: github.event_name == 'schedule'
+        run: |
+          case "${{ github.event.schedule }}" in
+            '0 6 1 * *') echo "phase=python"      >> $GITHUB_OUTPUT ;;
+            '0 6 2 * *') echo "phase=terminal"    >> $GITHUB_OUTPUT ;;
+            '0 6 3 * *') echo "phase=interactive" >> $GITHUB_OUTPUT ;;
+            *)           echo "phase=unknown"     >> $GITHUB_OUTPUT ;;
+          esac
+
+      # On schedule / workflow_dispatch: compute which images have changed
+      # since the previous month's release tag. This replaces the old
+      # "force-all" behavior -- unchanged images are skipped entirely.
+      #
+      # If the previous tag does not exist (first run, or retention gap),
+      # fall back to rebuilding everything so we don't silently ship nothing.
+      - name: Diff against previous release tag
+        id: diff
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
-          echo "python=true" >> $GITHUB_OUTPUT
-          echo "terminal=true" >> $GITHUB_OUTPUT
-          echo "webterm=true" >> $GITHUB_OUTPUT
-          echo "vscode=true" >> $GITHUB_OUTPUT
-          echo "marimo=true" >> $GITHUB_OUTPUT
-      # On push/PR, detect which files changed
-      - name: Detect changed paths
+          set -euo pipefail
+          LAST_TAG="release/$(date -u -d 'last month' +'%y.%m')"
+          echo "Diffing HEAD against $LAST_TAG"
+
+          if ! git rev-parse --verify "refs/tags/$LAST_TAG" >/dev/null 2>&1; then
+            echo "Tag $LAST_TAG not found; falling back to full rebuild."
+            for t in python terminal webterm vscode marimo carta; do
+              echo "${t}=true" >> $GITHUB_OUTPUT
+            done
+            exit 0
+          fi
+
+          changed() { ! git diff --quiet "$LAST_TAG" HEAD -- "$@"; }
+
+          # Any python version dir changed -> rebuild the python matrix
+          if changed dockerfiles/python/; then
+            echo "python=true" >> $GITHUB_OUTPUT
+          else
+            echo "python=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Terminal rebuilds if: its own dir changed, python/3.12 changed
+          # (terminal is FROM cadc/python:3.12), or bake config changed.
+          if changed dockerfiles/terminal/ dockerfiles/python/3.12/ docker-bake.hcl; then
+            TERMINAL_CHANGED=true
+          else
+            TERMINAL_CHANGED=false
+          fi
+          echo "terminal=$TERMINAL_CHANGED" >> $GITHUB_OUTPUT
+
+          # Downstream rebuilds if: its own dir changed OR terminal changed
+          # (cascade). The openvscode directory is published as "vscode".
+          for img in webterm vscode marimo; do
+            dir="dockerfiles/$img"
+            if [[ "$img" == "vscode" ]]; then
+              dir="dockerfiles/openvscode"
+            fi
+            if [[ "$TERMINAL_CHANGED" == "true" ]] || changed "$dir/"; then
+              echo "${img}=true" >> $GITHUB_OUTPUT
+            else
+              echo "${img}=false" >> $GITHUB_OUTPUT
+            fi
+          done
+
+          # CARTA is a leaf: no cascade from terminal or python (different
+          # distro base -- Ubuntu vs. Debian). Rebuild iff its own directory
+          # or docker-bake.hcl changed.
+          if changed dockerfiles/carta/ docker-bake.hcl; then
+            echo "carta=true" >> $GITHUB_OUTPUT
+          else
+            echo "carta=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Force a rebuild of images that haven't been republished in a while,
+      # so apt security patches eventually reach users even when no Renovate
+      # PR has forced a file change. The upstream `ubuntu:24.04` / debian
+      # digest-pin only flips when Canonical/Debian re-publish their tag,
+      # which can lag CVE patches by weeks. This step guarantees that every
+      # image is rebuilt at least every FORCED_REBUILD_AGE_DAYS days (default
+      # 45), picking up whatever apt security patches exist at build time.
+      #
+      # Trigger: scheduled runs only. Push / PR already rebuild on file
+      # changes; workflow_dispatch uses the release-tag diff as-is so a
+      # manual hotfix run isn't silently expanded.
+      #
+      # Mechanism: diff HEAD against release/<last YY.MM> and separately
+      # measure the age of that tag. If the tag is older than the threshold,
+      # flip every image output from the previous step to `true`. The phase
+      # gate below still applies per-day.
+      - name: Force rebuild on aging release tag
+        id: age
+        if: github.event_name == 'schedule'
+        env:
+          FORCED_REBUILD_AGE_DAYS: '45'
+        run: |
+          set -euo pipefail
+          LAST_TAG="release/$(date -u -d 'last month' +'%y.%m')"
+          if ! git rev-parse --verify "refs/tags/$LAST_TAG" >/dev/null 2>&1; then
+            echo "No $LAST_TAG tag; diff step already forced full rebuild."
+            echo "forced=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          TAG_DATE=$(git log -1 --format=%ct "refs/tags/$LAST_TAG")
+          NOW=$(date +%s)
+          AGE_DAYS=$(( (NOW - TAG_DATE) / 86400 ))
+          echo "Release tag $LAST_TAG is $AGE_DAYS days old (threshold: ${FORCED_REBUILD_AGE_DAYS})."
+          if (( AGE_DAYS > FORCED_REBUILD_AGE_DAYS )); then
+            echo "Forcing full rebuild to pick up apt security patches."
+            echo "forced=true" >> $GITHUB_OUTPUT
+          else
+            echo "forced=false" >> $GITHUB_OUTPUT
+          fi
+
+      # On push / pull_request: existing path-filter logic (unchanged).
+      - name: Detect changed paths (push/PR)
         if: github.event_name == 'push' || github.event_name == 'pull_request'
         uses: dorny/paths-filter@v3
         id: changes
@@ -105,55 +235,119 @@ jobs:
               - 'dockerfiles/openvscode/**'
             marimo:
               - 'dockerfiles/marimo/**'
+            carta:
+              - 'dockerfiles/carta/**'
             bake-config:
               - 'docker-bake.hcl'
-      # Combine results: respect dependency chain (terminal -> downstream)
-      - name: Resolve dependencies
+
+      # Combine results. On schedule, apply the phase gate so each release
+      # day only emits the images for its phase (even if others also changed).
+      # On workflow_dispatch, no gate -- rebuild everything the diff flagged.
+      # On push/PR, use the cascade logic unchanged.
+      - name: Resolve dependencies and apply phase gate
         id: filter
         run: |
-          # Use force-all outputs if schedule/dispatch, otherwise use changes
-          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "python=true" >> $GITHUB_OUTPUT
-            echo "terminal=true" >> $GITHUB_OUTPUT
-            echo "webterm=true" >> $GITHUB_OUTPUT
-            echo "vscode=true" >> $GITHUB_OUTPUT
-            echo "marimo=true" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          EVENT="${{ github.event_name }}"
+
+          if [[ "$EVENT" == "schedule" ]]; then
+            PHASE="${{ steps.phase.outputs.phase }}"
+            FORCED="${{ steps.age.outputs.forced }}"
+            if [[ "$FORCED" == "true" ]]; then
+              # Release anchor older than the freshness threshold; rebuild
+              # every image in this phase regardless of file diff. The phase
+              # gate below still restricts which subset actually builds today.
+              P=true; T=true; W=true; V=true; M=true; C=true
+            else
+              P="${{ steps.diff.outputs.python }}"
+              T="${{ steps.diff.outputs.terminal }}"
+              W="${{ steps.diff.outputs.webterm }}"
+              V="${{ steps.diff.outputs.vscode }}"
+              M="${{ steps.diff.outputs.marimo }}"
+              C="${{ steps.diff.outputs.carta }}"
+            fi
+            echo "Scheduled run, phase=$PHASE, forced_by_age=$FORCED"
+            case "$PHASE" in
+              python)
+                echo "python=$P"        >> $GITHUB_OUTPUT
+                echo "terminal=false"   >> $GITHUB_OUTPUT
+                echo "webterm=false"    >> $GITHUB_OUTPUT
+                echo "vscode=false"     >> $GITHUB_OUTPUT
+                echo "marimo=false"     >> $GITHUB_OUTPUT
+                echo "carta=false"      >> $GITHUB_OUTPUT
+                ;;
+              terminal)
+                echo "python=false"     >> $GITHUB_OUTPUT
+                echo "terminal=$T"      >> $GITHUB_OUTPUT
+                echo "webterm=false"    >> $GITHUB_OUTPUT
+                echo "vscode=false"     >> $GITHUB_OUTPUT
+                echo "marimo=false"     >> $GITHUB_OUTPUT
+                echo "carta=false"      >> $GITHUB_OUTPUT
+                ;;
+              interactive)
+                echo "python=false"     >> $GITHUB_OUTPUT
+                echo "terminal=false"   >> $GITHUB_OUTPUT
+                echo "webterm=$W"       >> $GITHUB_OUTPUT
+                echo "vscode=$V"        >> $GITHUB_OUTPUT
+                echo "marimo=$M"        >> $GITHUB_OUTPUT
+                echo "carta=$C"         >> $GITHUB_OUTPUT
+                ;;
+              *)
+                echo "Unknown phase '$PHASE'; skipping all builds." >&2
+                echo "python=false"     >> $GITHUB_OUTPUT
+                echo "terminal=false"   >> $GITHUB_OUTPUT
+                echo "webterm=false"    >> $GITHUB_OUTPUT
+                echo "vscode=false"     >> $GITHUB_OUTPUT
+                echo "marimo=false"     >> $GITHUB_OUTPUT
+                echo "carta=false"      >> $GITHUB_OUTPUT
+                ;;
+            esac
+          elif [[ "$EVENT" == "workflow_dispatch" ]]; then
+            # Manual: build whatever the release-tag diff says changed,
+            # across all phases. Useful for out-of-band hotfix runs.
+            echo "python=${{ steps.diff.outputs.python }}"     >> $GITHUB_OUTPUT
+            echo "terminal=${{ steps.diff.outputs.terminal }}" >> $GITHUB_OUTPUT
+            echo "webterm=${{ steps.diff.outputs.webterm }}"   >> $GITHUB_OUTPUT
+            echo "vscode=${{ steps.diff.outputs.vscode }}"     >> $GITHUB_OUTPUT
+            echo "marimo=${{ steps.diff.outputs.marimo }}"     >> $GITHUB_OUTPUT
+            echo "carta=${{ steps.diff.outputs.carta }}"       >> $GITHUB_OUTPUT
           else
-            # Any python version change triggers a python-image rebuild
+            # push / pull_request: path-filter cascade.
+            # CARTA is a leaf (standalone Ubuntu base) so it does NOT cascade
+            # from terminal / python / bake-config -- only its own dir counts.
             echo "python=${{ steps.changes.outputs.python }}" >> $GITHUB_OUTPUT
-            # The terminal image is FROM python:3.12, so changes to python/3.12
-            # must cascade into terminal (and therefore all downstream images).
-            # Changes to terminal itself or docker-bake.hcl also cascade.
+            echo "carta=${{ steps.changes.outputs.carta }}"   >> $GITHUB_OUTPUT
             TERMINAL="${{ steps.changes.outputs.terminal }}"
             PYTHON_BASE="${{ steps.changes.outputs.python-terminal-base }}"
             BAKE_CONFIG="${{ steps.changes.outputs.bake-config }}"
             if [[ "$TERMINAL" == "true" || "$PYTHON_BASE" == "true" || "$BAKE_CONFIG" == "true" ]]; then
               echo "terminal=true" >> $GITHUB_OUTPUT
-              echo "webterm=true" >> $GITHUB_OUTPUT
-              echo "vscode=true" >> $GITHUB_OUTPUT
-              echo "marimo=true" >> $GITHUB_OUTPUT
+              echo "webterm=true"  >> $GITHUB_OUTPUT
+              echo "vscode=true"   >> $GITHUB_OUTPUT
+              echo "marimo=true"   >> $GITHUB_OUTPUT
             else
               echo "terminal=false" >> $GITHUB_OUTPUT
               echo "webterm=${{ steps.changes.outputs.webterm }}" >> $GITHUB_OUTPUT
-              echo "vscode=${{ steps.changes.outputs.vscode }}" >> $GITHUB_OUTPUT
-              echo "marimo=${{ steps.changes.outputs.marimo }}" >> $GITHUB_OUTPUT
+              echo "vscode=${{ steps.changes.outputs.vscode }}"   >> $GITHUB_OUTPUT
+              echo "marimo=${{ steps.changes.outputs.marimo }}"   >> $GITHUB_OUTPUT
             fi
           fi
-      # Build the list of bake targets to build (newline-separated for bake-action).
-      # Whenever any downstream image (webterm/vscode/marimo) is built, we also
-      # include terminal so bake can substitute the locally-built terminal via
-      # its "contexts" block. Otherwise bake would try to pull
-      # images.canfar.net/cadc/terminal:${RELEASE_TAG} from the registry, which
-      # fails on PRs (no registry login) and on scheduled runs where the
-      # current-month tag hasn't been pushed yet.
+
+      # Build the newline-separated bake target list. Whenever a downstream
+      # image (webterm/vscode/marimo) is selected, terminal is force-added
+      # so bake's `contexts` substitution can wire the local build.
       - name: Determine bake targets
         id: targets
         run: |
           WEBTERM="${{ steps.filter.outputs.webterm }}"
           VSCODE="${{ steps.filter.outputs.vscode }}"
           MARIMO="${{ steps.filter.outputs.marimo }}"
+          CARTA="${{ steps.filter.outputs.carta }}"
           TERMINAL="${{ steps.filter.outputs.terminal }}"
-          # Force terminal in the build set whenever a downstream target is selected.
+          # webterm / vscode / marimo all inherit from terminal via bake's
+          # `contexts` substitution -- terminal must be in the target list
+          # whenever any of them is selected. CARTA is standalone; it does
+          # NOT force a terminal rebuild.
           if [[ "$WEBTERM" == "true" || "$VSCODE" == "true" || "$MARIMO" == "true" ]]; then
             TERMINAL="true"
           fi
@@ -170,16 +364,17 @@ jobs:
           if [[ "$MARIMO" == "true" ]]; then
             TARGETS="${TARGETS:+$TARGETS$'\n'}marimo"
           fi
-          # Output as multiline string for bake-action
+          if [[ "$CARTA" == "true" ]]; then
+            TARGETS="${TARGETS:+$TARGETS$'\n'}carta"
+          fi
           echo "bake_targets<<EOF" >> $GITHUB_OUTPUT
           echo "$TARGETS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "Bake targets to build:"
           echo "$TARGETS"
 
-  # --- Job 0: Lint ---
-  # Runs hadolint on all Dockerfiles to enforce best practices.
-  # Must pass before any builds start.
+  # --- Job: Lint ---
+  # Runs hadolint on all Dockerfiles. Must pass before any builds start.
   lint:
     name: Lint Dockerfiles
     runs-on: ubuntu-24.04
@@ -190,12 +385,10 @@ jobs:
         with:
           recursive: true
 
-  # --- Job 1: Python Runtime (Matrix Build) ---
-  # Builds the Python foundation images for all supported versions (3.10-3.14).
-  # Each version is built in parallel via the matrix strategy.
-  # Images are pushed to: images.canfar.net/cadc/python:<version>
-  # On PRs: build-only (no push, no registry login).
-  # Skipped if no python/** files changed (unless schedule/dispatch).
+  # --- Job: Python Runtime (Matrix Build) ---
+  # Builds the Python foundation images for all supported versions.
+  # Runs on day-1 scheduled builds, push/PR affecting python/**, or
+  # workflow_dispatch. Skipped if no python files changed since last release.
   python:
     name: Python ${{ matrix.version }}
     needs: [lint, detect-changes]
@@ -208,7 +401,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      # Only login to registry on push/schedule/dispatch (not PRs)
       - name: Login to CANFAR Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -222,19 +414,20 @@ jobs:
           context: ./dockerfiles/python/${{ matrix.version }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.REGISTRY }}/cadc/python:${{ matrix.version }}
-          # GitHub Actions cache for Docker layers (speeds up rebuilds)
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # --- Job 2: Interactive Stack (Bake Build) ---
-# Builds only the changed targets using Docker Bake (terminal, webterm, vscode, marimo).
-# Bake ensures the terminal image is built first and used as the base for
-# downstream images, maintaining the dependency chain without pushing intermediates.
-# Skipped if no interactive stack files changed.
+  # --- Job: Interactive Stack (Bake Build) ---
+  # Builds terminal / webterm / vscode / marimo / carta using Docker Bake.
+  # The webterm / vscode / marimo images cascade from terminal via bake's
+  # `contexts` substitution. CARTA is a standalone leaf target (Ubuntu-based,
+  # no cascade from terminal). On day-2 scheduled builds this typically runs
+  # with just `terminal`; on day-3 it runs with the selected day-3 images
+  # (webterm / vscode / marimo / carta, plus terminal auto-added for
+  # substitution when any of webterm/vscode/marimo is selected).
   interactive-stack:
     name: Interactive Stack
     needs: [setup, lint, detect-changes]
-    # Only run if at least one bake target needs building
     if: needs.detect-changes.outputs.bake_targets != ''
     runs-on: ubuntu-24.04
     steps:
@@ -250,15 +443,73 @@ jobs:
           password: ${{ secrets.CANFAR_REGISTRY_PASSWORD }}
       - name: Show targets to build
         run: 'echo "Building targets: ${{ needs.detect-changes.outputs.bake_targets }}"'
-      # Bake builds only the targets that changed.
-      # We override the tags with the dynamically generated release tag.
+      # Derive the CARTA tag from the Dockerfile's CARTA_VERSION arg so it
+      # tracks upstream CARTA releases rather than the monthly RELEASE_TAG.
+      # Strips the "~noble1" PPA-rebuild suffix: "5.1.0~noble1" -> "5.1.0".
+      # Falls back to a safe placeholder if the Dockerfile is absent or the
+      # arg can't be parsed; bake will still build, just with tag "unknown".
+      - name: Derive CARTA tag
+        id: carta
+        run: |
+          set -euo pipefail
+          DOCKERFILE=dockerfiles/carta/Dockerfile
+          if [[ -f "$DOCKERFILE" ]]; then
+            CARTA_VERSION=$(awk -F= '/^ARG CARTA_VERSION=/ {print $2; exit}' "$DOCKERFILE")
+            CARTA_TAG="${CARTA_VERSION%%~*}"
+            CARTA_TAG="${CARTA_TAG:-unknown}"
+          else
+            CARTA_TAG="unknown"
+          fi
+          echo "carta_tag=$CARTA_TAG" >> $GITHUB_OUTPUT
+          echo "Derived CARTA_TAG=$CARTA_TAG"
       - name: Build and Push (Bake)
         uses: docker/bake-action@v5
         env:
           RELEASE_TAG: ${{ needs.setup.outputs.release_tag }}
+          CARTA_TAG: ${{ steps.carta.outputs.carta_tag }}
         with:
           targets: ${{ needs.detect-changes.outputs.bake_targets }}
           push: ${{ github.event_name != 'pull_request' }}
           set: |
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
+
+  # --- Job: Tag release commit ---
+  # After a successful day-3 scheduled run, create and push a
+  # release/<YY.MM> git tag on the commit we just built from. Next month's
+  # detect-changes step diffs HEAD against this tag to decide what to rebuild.
+  #
+  # Only runs on the day-3 schedule so we have a single, well-defined
+  # "release complete" marker per month. Skipped entirely on push, PR,
+  # workflow_dispatch, and day-1/day-2 schedules.
+  tag-release:
+    name: Tag release commit
+    needs: [setup, python, interactive-stack]
+    if: >-
+      always() &&
+      github.event_name == 'schedule' &&
+      github.event.schedule == '0 6 3 * *' &&
+      needs.python.result != 'failure' &&
+      needs.python.result != 'cancelled' &&
+      needs.interactive-stack.result != 'failure' &&
+      needs.interactive-stack.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create and push release tag
+        env:
+          TAG: release/${{ needs.setup.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; skipping."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "CANFAR release $TAG"
+          git push origin "$TAG"

@@ -1,6 +1,6 @@
 # CANFAR Container Images
 
-This repository contains the layered Dockerfile definitions for the CANFAR container ecosystem, optimized for the CANFAR Science Platform. The stack is fully automated: Renovate keeps pinned dependencies current, and a GitHub Actions pipeline lints, builds, and publishes every image to the CANFAR Harbor registry on a monthly cadence and on every merge to `main`.
+This repository contains the layered Dockerfile definitions for the CANFAR container ecosystem, optimized for the CANFAR Science Platform. The stack is fully automated: Renovate keeps pinned dependencies current during a dedicated monthly merge window, and a GitHub Actions pipeline lints, builds, and publishes every image to the CANFAR Harbor registry on a staggered monthly release window (days 1 – 3). See [`doc/RELEASE-CADENCE.md`](doc/RELEASE-CADENCE.md) for the full policy.
 
 ## Project Structure
 
@@ -13,7 +13,8 @@ canfar-containers/
 ├── renovate.json       # Renovate (dependency-update bot) configuration
 ├── archive/            # Retired image definitions (kept for historical reference; not built or published)
 ├── doc/                # Additional documentation
-│   └── HANDOFF.md      # Operational / maintenance reference
+│   ├── HANDOFF.md          # Operational / maintenance reference
+│   └── RELEASE-CADENCE.md  # Merge window / release window policy
 ├── .github/
 │   └── workflows/
 │       └── image-pipeline.yml  # Lint → build → push CI pipeline
@@ -22,7 +23,8 @@ canfar-containers/
     ├── terminal/       # Interactive CLI environment (base for the rest)
     ├── webterm/        # Web-based terminal (ttyd + Starship + AI CLIs)
     ├── openvscode/     # OpenVSCode Server (browser IDE) + Cursor agent
-    └── marimo/         # Marimo reactive notebooks
+    ├── marimo/         # Marimo reactive notebooks
+    └── carta/          # CARTA: Cube Analysis and Rendering Tool for Astronomy
 ```
 
 ## Architecture
@@ -60,43 +62,55 @@ The images follow a modular layered model. All images are published to `images.c
    - **Marimo** is installed via `uv pip install --system` and pinned via PyPI
    - Includes the same Starship Gruvbox prompt and editor set for the in-notebook terminal
 
+6. **CARTA image (`carta`)**
+   - **Inherits**: `ubuntu:24.04` (digest-pinned, tracked by Renovate)
+   - **Upstream**: CARTA is distributed exclusively via the `cartavis-team` PPA for Ubuntu. No Debian or RHEL build exists, so this image does **not** share the Debian-based `cadc/terminal` base and is a standalone leaf in the build graph.
+   - **Web UI**: CARTA on port 5000 (`--no_browser --port 5000`), matching the CANFAR Skaha contributed-session contract.
+   - **Pinning**: the apt version string of the `carta` package is tracked via Renovate's `deb` datasource pointed at the PPA's Packages index — this catches both upstream releases (e.g. `5.1.0 → 5.2.0`) and PPA rebuilds with the same upstream version (e.g. `~noble1 → ~noble2`). The PPA signing key fingerprint is manually pinned (security-sensitive; deliberately not Renovate-tracked).
+   - **Tagging**: `cadc/carta:<upstream version>` (e.g. `cadc/carta:5.1.0`), **not** the `YY.MM` cadence of the rest of the interactive stack. The tag tracks what astronomers actually install; CI derives it from the Dockerfile's `CARTA_VERSION` arg by stripping the `~noble1` suffix.
+
 ## Build & Deployment
 
 The entire image stack is automated via GitHub Actions (`.github/workflows/image-pipeline.yml`).
 
 1. **Python layer**: builds versions 3.10 – 3.14 in a parallel matrix via `docker/build-push-action`.
 2. **Terminal layer**: built on top of `cadc/python:3.12`.
-3. **Interactive stack** (webterm, vscode, marimo): each inherits from `terminal` and is built together with it via `docker buildx bake` (see `docker-bake.hcl`). Bake's `contexts` feature wires the downstream images to the locally-built terminal, so no intermediate tag needs to be pushed between builds.
+3. **Interactive stack** (webterm, vscode, marimo, carta): webterm/vscode/marimo each inherit from `terminal` and are built together with it via `docker buildx bake` (see `docker-bake.hcl`). Bake's `contexts` feature wires those downstream images to the locally-built terminal, so no intermediate tag needs to be pushed between builds. CARTA is also a bake target but is **standalone** — it builds from `ubuntu:24.04` and does not depend on `terminal`.
 
 **Release tagging**
 
-- Downstream images (`terminal`, `webterm`, `vscode`, `marimo`) are tagged with the current month in `YY.MM` format (e.g., `26.02`), generated fresh on each build.
+- The Debian-based interactive images (`terminal`, `webterm`, `vscode`, `marimo`) are tagged with the current month in `YY.MM` format (e.g., `26.02`), generated fresh on each build.
+- `cadc/carta` is tagged with the **upstream CARTA version** (e.g. `cadc/carta:5.1.0`), deliberately decoupled from the `YY.MM` cadence so the tag tracks what astronomers actually install. The tag is derived in CI from the Dockerfile's `CARTA_VERSION` arg (stripping the `~noble1` PPA-rebuild suffix).
 - Python images are tagged by Python version only (e.g., `python:3.12`) and are overwritten in place on each rebuild.
 
 **Triggers**
 
 The pipeline runs on four events:
 
-- **Scheduled**: 1st of every month at 06:00 UTC. All images rebuild to pick up upstream base-image and apt security updates.
-- **Push to `main`**: selective rebuild based on which files changed. The dependency chain is respected — changes to `dockerfiles/python/3.12/` or `dockerfiles/terminal/` cascade into all downstream images.
+- **Scheduled (tiered release window)**: three crons on the 1st, 2nd, and 3rd of every month at 06:00 UTC. Day 1 publishes the Python matrix, day 2 the terminal base, day 3 the interactive stack (webterm, vscode, marimo, carta). On each day, an image is only rebuilt & republished if its Dockerfile (or an upstream it depends on) changed since the previous month's `release/YY.MM` git tag, **or** if that release tag is more than 45 days old — the latter forces a full rebuild so apt security patches eventually propagate even when no Renovate PR has triggered a file change. After a successful day-3 run, CI pushes a new `release/YY.MM` tag that anchors next month's diff.
+- **Push to `main`**: selective rebuild based on which files changed, with push to the registry. The dependency chain is respected — changes to `dockerfiles/python/3.12/` or `dockerfiles/terminal/` cascade into all downstream images. No phase gate applies on push.
 - **Pull requests**: lint runs, and affected images are built (with push disabled) so broken changes are caught before merge.
-- **Manual**: via GitHub's "Actions" tab (`workflow_dispatch`), same behavior as scheduled.
+- **Manual (`workflow_dispatch`)**: escape hatch via GitHub's "Actions" tab. Uses the same release-tag diff as the scheduled runs but ignores the phase gate, so it rebuilds every changed image in one shot. Does **not** push a new `release/YY.MM` tag.
+
+See [`doc/RELEASE-CADENCE.md`](doc/RELEASE-CADENCE.md) for the merge-window / release-window policy that governs when Renovate runs and when humans should (and shouldn't) merge.
 
 ## Automation
 
 Two complementary systems keep the stack current:
 
-- **Renovate** (hosted by [Mend](https://www.mend.io/), configured in `renovate.json`) continuously scans the Dockerfiles and workflow files, and opens PRs to bump any pinned dependency. PRs are scheduled to appear on the 1st of each month (UTC). Every `ARG *_VERSION=…` declaration with a `# renovate:` annotation is tracked automatically — base-image digests, PyPI and npm packages, GitHub releases, and Debian apt packages (via the [Repology](https://repology.org/) API).
+- **Renovate** (hosted by [Mend](https://www.mend.io/), configured in `renovate.json`) continuously scans the Dockerfiles and workflow files, and opens PRs to bump any pinned dependency. PRs are scheduled to appear during the monthly **merge window** — days 5 through 27 UTC — so they never overlap with the release window (days 1 – 3) or the pre-release soft freeze (day 28 onward). Every `ARG *_VERSION=…` declaration with a `# renovate:` annotation is tracked automatically — base-image digests, PyPI and npm packages, GitHub releases, and Debian apt packages (via the [Repology](https://repology.org/) API).
 - **Hadolint** (`hadolint/hadolint-action`) lints every Dockerfile on every push and PR. Repo-wide rules are in `.hadolint.yaml`.
 
 ### What the monthly rebuild actually refreshes
 
-The monthly cron only refreshes the parts of each image that are *not* explicitly pinned:
+When an image *does* get rebuilt during the release window, the rebuild refreshes the parts of the image that are *not* explicitly pinned:
 
-- **Refreshed every month**: the Debian apt layer (security updates for `curl`, `git`, etc. that haven't been pinned to an exact version), any `pip install` / `npm install` without an explicit version, and upstream base-image layers that the maintainer has rebuilt.
-- **Not refreshed by the cron**: any dependency pinned via `ARG *_VERSION=…` with a `# renovate:` annotation, and any base image pinned by `@sha256:…` digest. These change only when a Renovate PR bumping the pin is merged into `main`.
+- **Refreshed on rebuild**: the Debian apt layer (security updates for `curl`, `git`, etc. that haven't been pinned to an exact version), any `pip install` / `npm install` without an explicit version, and upstream base-image layers that the maintainer has rebuilt.
+- **Not refreshed by the cron alone**: any dependency pinned via `ARG *_VERSION=…` with a `# renovate:` annotation, and any base image pinned by `@sha256:…` digest. These change only when a Renovate PR bumping the pin is merged into `main` during the merge window.
 
-In practice that means **Renovate and the monthly cron are complementary**: Renovate keeps the pins from going stale by opening PRs against `main` (scheduled on the 1st of each month, same cadence as the cron), and the cron publishes a fresh `YY.MM` tag from whatever is on `main` at the time. If Renovate PRs are reviewed and merged before the cron fires, that month's tag ships with both the latest pins and the latest upstream patches. If they aren't merged, the tag still ships — just with last month's pins plus any unpinned upstream updates.
+An important consequence of the "only republish if something changed" rule: **if an image's Dockerfile has no commits between two consecutive releases, that image is not rebuilt at all, so unpinned apt security patches also don't land for that cycle.** The previous month's `YY.MM` tag in Harbor remains the current tag; no new one is cut for that image. In practice this is rare because Renovate typically lands at least one pin bump per image per cycle. See [`doc/RELEASE-CADENCE.md`](doc/RELEASE-CADENCE.md) for the full discussion of this trade-off.
+
+**Renovate and the release window are complementary**: Renovate opens pin-bump PRs during the merge window (days 5 – 27), humans review and merge them, and the release window (days 1 – 3 of the next month) publishes fresh `YY.MM` tags containing both the merged pin bumps and any unpinned upstream patches.
 
 ### Pinning philosophy
 
