@@ -96,4 +96,12 @@ LABEL org.opencontainers.image.description="CARTA: Cube Analysis and Rendering T
 LABEL org.opencontainers.image.source="https://github.com/opencadc/canfar-containers"
 LABEL org.opencontainers.image.licenses="GPL-3.0-or-later"
 
-CMD ["carta", "--no_browser", "--port", "5000"]
+# --debug_no_auth disables CARTA's own per-session token check. This is safe
+# and necessary in the Skaha contributed-session model: Skaha already gates
+# access to the pod via its own auth (only the logged-in, authorized user
+# can reach the ingress at all), and Skaha's proxy does NOT forward CARTA's
+# auto-generated token to the browser. Without this flag every WebSocket
+# connection fails with "Incorrect or missing auth token supplied" and the
+# session appears disconnected. Matches the behavior of the sibling webterm
+# / vscode / marimo images, which likewise delegate auth to Skaha.
+CMD ["carta", "--no_browser", "--debug_no_auth", "--port", "5000"]
