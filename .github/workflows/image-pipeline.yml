@@ -16,7 +16,11 @@
 #
 # An image is only rebuilt & republished on its release day if its Dockerfile
 # (or an upstream it depends on, or docker-bake.hcl) changed since the
-# release/<previous YY.MM> git tag. Unchanged images are skipped entirely.
+# release/<previous YY.MM> git tag. Unchanged images are skipped entirely --
+# EXCEPT when the previous release tag is older than FORCED_REBUILD_AGE_DAYS
+# (default 45), in which case every image in today's phase is rebuilt so
+# apt security patches eventually propagate even if no file change triggered
+# a Renovate PR. See the "Force rebuild on aging release tag" step.
 #
 # Trigger conditions:
 #   - Schedule: three separate crons for days 1, 2, 3 (06:00 UTC)
@@ -172,6 +176,46 @@ jobs:
             echo "carta=false" >> $GITHUB_OUTPUT
           fi
 
+      # Force a rebuild of images that haven't been republished in a while,
+      # so apt security patches eventually reach users even when no Renovate
+      # PR has forced a file change. The upstream `ubuntu:24.04` / debian
+      # digest-pin only flips when Canonical/Debian re-publish their tag,
+      # which can lag CVE patches by weeks. This step guarantees that every
+      # image is rebuilt at least every FORCED_REBUILD_AGE_DAYS days (default
+      # 45), picking up whatever apt security patches exist at build time.
+      #
+      # Trigger: scheduled runs only. Push / PR already rebuild on file
+      # changes; workflow_dispatch uses the release-tag diff as-is so a
+      # manual hotfix run isn't silently expanded.
+      #
+      # Mechanism: diff HEAD against release/<last YY.MM> and separately
+      # measure the age of that tag. If the tag is older than the threshold,
+      # flip every image output from the previous step to `true`. The phase
+      # gate below still applies per-day.
+      - name: Force rebuild on aging release tag
+        id: age
+        if: github.event_name == 'schedule'
+        env:
+          FORCED_REBUILD_AGE_DAYS: '45'
+        run: |
+          set -euo pipefail
+          LAST_TAG="release/$(date -u -d 'last month' +'%y.%m')"
+          if ! git rev-parse --verify "refs/tags/$LAST_TAG" >/dev/null 2>&1; then
+            echo "No $LAST_TAG tag; diff step already forced full rebuild."
+            echo "forced=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          TAG_DATE=$(git log -1 --format=%ct "refs/tags/$LAST_TAG")
+          NOW=$(date +%s)
+          AGE_DAYS=$(( (NOW - TAG_DATE) / 86400 ))
+          echo "Release tag $LAST_TAG is $AGE_DAYS days old (threshold: ${FORCED_REBUILD_AGE_DAYS})."
+          if (( AGE_DAYS > FORCED_REBUILD_AGE_DAYS )); then
+            echo "Forcing full rebuild to pick up apt security patches."
+            echo "forced=true" >> $GITHUB_OUTPUT
+          else
+            echo "forced=false" >> $GITHUB_OUTPUT
+          fi
+
       # On push / pull_request: existing path-filter logic (unchanged).
       - name: Detect changed paths (push/PR)
         if: github.event_name == 'push' || github.event_name == 'pull_request'
@@ -208,13 +252,21 @@ jobs:
 
           if [[ "$EVENT" == "schedule" ]]; then
             PHASE="${{ steps.phase.outputs.phase }}"
-            P="${{ steps.diff.outputs.python }}"
-            T="${{ steps.diff.outputs.terminal }}"
-            W="${{ steps.diff.outputs.webterm }}"
-            V="${{ steps.diff.outputs.vscode }}"
-            M="${{ steps.diff.outputs.marimo }}"
-            C="${{ steps.diff.outputs.carta }}"
-            echo "Scheduled run, phase=$PHASE"
+            FORCED="${{ steps.age.outputs.forced }}"
+            if [[ "$FORCED" == "true" ]]; then
+              # Release anchor older than the freshness threshold; rebuild
+              # every image in this phase regardless of file diff. The phase
+              # gate below still restricts which subset actually builds today.
+              P=true; T=true; W=true; V=true; M=true; C=true
+            else
+              P="${{ steps.diff.outputs.python }}"
+              T="${{ steps.diff.outputs.terminal }}"
+              W="${{ steps.diff.outputs.webterm }}"
+              V="${{ steps.diff.outputs.vscode }}"
+              M="${{ steps.diff.outputs.marimo }}"
+              C="${{ steps.diff.outputs.carta }}"
+            fi
+            echo "Scheduled run, phase=$PHASE, forced_by_age=$FORCED"
             case "$PHASE" in
               python)
                 echo "python=$P"        >> $GITHUB_OUTPUT

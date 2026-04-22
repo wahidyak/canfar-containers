@@ -209,6 +209,17 @@ The workflow defines six jobs that fan out from a short setup stage:
    - If any of `webterm`/`vscode`/`marimo` is selected, `terminal` is
      force-added to the bake target list (see §3). `carta` does NOT
      force terminal; the two subsystems are independent.
+   - **Freshness override (age-based forced rebuild).** On scheduled
+     runs, if the previous month's `release/<YY.MM>` tag is older than
+     `FORCED_REBUILD_AGE_DAYS` (default 45), every image in today's
+     phase is rebuilt regardless of file diff. This guarantees apt
+     security patches eventually propagate even when no Renovate PR
+     has triggered a file change (e.g. Canonical batches security
+     fixes without re-publishing the `ubuntu:24.04` tag's digest, so
+     Renovate sees no bump and CARTA would otherwise sit stale). The
+     phase gate still applies — so on day 3 only the interactive
+     stack gets the force, on day 2 only terminal, etc. The override
+     does **not** apply to push / PR / workflow_dispatch events.
    Emits a `bake_targets` output (newline-separated) consumed by the
    interactive-stack job, plus a `phase` output for diagnostics.
 3. **`lint`** — runs `hadolint` recursively. Two rules globally ignored

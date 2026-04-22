@@ -11,7 +11,7 @@ every monthly `YY.MM` tag is cut from a stable, deliberately-frozen tree.
 |-----------------|---------------------|----------------------------------------------------------------------------------------------|
 | 1  (06:00 UTC)  | Release: python     | `cadc/python:{3.10, 3.11, 3.12, 3.13, 3.14}` rebuilt & pushed (if changed)                   |
 | 2  (06:00 UTC)  | Release: base       | `cadc/terminal:YY.MM` rebuilt & pushed (if changed)                                          |
-| 3  (06:00 UTC)  | Release: stack      | `cadc/webterm:YY.MM`, `cadc/vscode:YY.MM`, `cadc/marimo:YY.MM` rebuilt & pushed (if changed); `cadc/carta:<upstream version>` rebuilt & pushed on CARTA version bump |
+| 3  (06:00 UTC)  | Release: stack      | `cadc/webterm:YY.MM`, `cadc/vscode:YY.MM`, `cadc/marimo:YY.MM` rebuilt & pushed (if changed); `cadc/carta:<upstream version>` rebuilt & pushed on CARTA version bump or age-based forced rebuild |
 | 3  (post-build) | Release: mark       | `release/YY.MM` git tag pushed on the commit we built from                                   |
 | 4               | Buffer              | No publishes, no merges. Absorbs day-3 re-runs and bakes in a freeze gap                     |
 | 5 – 27          | Merge window        | Renovate opens PRs; humans review & merge. PRs lint + build but do **not** push              |
@@ -85,7 +85,39 @@ and cascades into the interactive stack on day 3.
 - On day 3 only, if both prior builds succeeded (or were legitimately
   skipped), `release/<this month>` is tagged and pushed.
 
-## Caveats
+## Age-based forced rebuild (freshness floor)
+
+The "only republish if changed" rule has a hole: unpinned apt packages
+installed by a Dockerfile (every transitive dependency of `apt-get
+install …` that isn't explicitly version-pinned) only refresh when the
+image rebuilds. Without intervention, an image whose Dockerfile hasn't
+changed in several months would sit on stale apt packages — which can
+include unshipped security patches.
+
+To close this, on scheduled runs the `detect-changes` job checks the
+age of the previous month's `release/<YY.MM>` tag. If it's older than
+`FORCED_REBUILD_AGE_DAYS` (default **45**), **every image in today's
+phase is rebuilt regardless of file diff**. Rationale:
+
+- Upstream base images (`ubuntu:24.04`, `debian:bookworm-slim`) are
+  typically refreshed within a few weeks of a security event, and
+  Renovate catches the digest change. That's the normal path.
+- But Canonical/Debian sometimes batch security patches without
+  re-publishing the base-image tag. When that happens, Renovate sees
+  nothing, no PR opens, and the image stays stale. The 45-day ceiling
+  guarantees that can't persist indefinitely.
+- The threshold is `> 45` days: long enough that normal Renovate-
+  driven churn takes precedence on active months, short enough that
+  the worst-case staleness for a quiet image is roughly 6 – 8 weeks
+  rather than open-ended.
+
+The override does **not** apply on `push`, `pull_request`, or
+`workflow_dispatch`. It's strictly a safety valve for the scheduled
+monthly cadence. Tune the threshold by editing
+`FORCED_REBUILD_AGE_DAYS` in the workflow step `Force rebuild on aging
+release tag`.
+
+## Other caveats worth knowing
 
 - **The diff anchor is a git tag, not a registry tag.** Losing the
   `release/YY.MM` git tag (force-push to an orphan, tag retention
@@ -96,7 +128,10 @@ and cascades into the interactive stack on day 3.
   alter the monthly anchor.
 - **CARTA uses a different tag scheme.** `cadc/carta:<upstream
   version>` (e.g. `5.1.0`), not `cadc/carta:<YY.MM>`. A month with no
-  CARTA bump publishes no new CARTA tag.
+  CARTA bump publishes no new CARTA tag. A month with a forced-by-age
+  rebuild re-pushes the current `<upstream version>` tag (overwriting
+  the existing digest) so security patches propagate without a version
+  change.
 
 ## Adjusting the cadence
 
