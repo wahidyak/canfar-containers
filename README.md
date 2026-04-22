@@ -77,26 +77,28 @@ The entire image stack is automated via GitHub Actions (`.github/workflows/image
 
 The pipeline runs on four events:
 
-- **Scheduled**: 1st of every month at 06:00 UTC. All images rebuild to pick up upstream base-image and apt security updates.
-- **Push to `main`**: selective rebuild based on which files changed. The dependency chain is respected — changes to `dockerfiles/python/3.12/` or `dockerfiles/terminal/` cascade into all downstream images.
+- **Scheduled (tiered release window)**: three crons on the 1st, 2nd, and 3rd of every month at 06:00 UTC. Day 1 publishes the Python matrix, day 2 the terminal base, day 3 the interactive stack (webterm, vscode, marimo). On each day, an image is only rebuilt & republished if its Dockerfile (or an upstream it depends on) changed since the previous month's `release/YY.MM` git tag. After a successful day-3 run, CI pushes a new `release/YY.MM` tag that anchors next month's diff.
+- **Push to `main`**: selective rebuild based on which files changed, with push to the registry. The dependency chain is respected — changes to `dockerfiles/python/3.12/` or `dockerfiles/terminal/` cascade into all downstream images. No phase gate applies on push.
 - **Pull requests**: lint runs, and affected images are built (with push disabled) so broken changes are caught before merge.
-- **Manual**: via GitHub's "Actions" tab (`workflow_dispatch`), same behavior as scheduled.
+- **Manual (`workflow_dispatch`)**: escape hatch via GitHub's "Actions" tab. Uses the same release-tag diff as the scheduled runs but ignores the phase gate, so it rebuilds every changed image in one shot. Does **not** push a new `release/YY.MM` tag.
+
+See [`doc/RELEASE-CADENCE.md`](doc/RELEASE-CADENCE.md) for the merge-window / release-window policy that governs when Renovate runs and when humans should (and shouldn't) merge.
 
 ## Automation
 
 Two complementary systems keep the stack current:
 
-- **Renovate** (hosted by [Mend](https://www.mend.io/), configured in `renovate.json`) continuously scans the Dockerfiles and workflow files, and opens PRs to bump any pinned dependency. PRs are scheduled to appear on the 1st of each month (UTC). Every `ARG *_VERSION=…` declaration with a `# renovate:` annotation is tracked automatically — base-image digests, PyPI and npm packages, GitHub releases, and Debian apt packages (via the [Repology](https://repology.org/) API).
+- **Renovate** (hosted by [Mend](https://www.mend.io/), configured in `renovate.json`) continuously scans the Dockerfiles and workflow files, and opens PRs to bump any pinned dependency. PRs are scheduled to appear during the merge window (days 5 – 27 UTC), deliberately outside the release window on days 1 – 3. Every `ARG *_VERSION=…` declaration with a `# renovate:` annotation is tracked automatically — base-image digests, PyPI and npm packages, GitHub releases, and Debian apt packages (via the [Repology](https://repology.org/) API).
 - **Hadolint** (`hadolint/hadolint-action`) lints every Dockerfile on every push and PR. Repo-wide rules are in `.hadolint.yaml`.
 
-### What the monthly rebuild actually refreshes
+### What the release cadence actually refreshes
 
-The monthly cron only refreshes the parts of each image that are *not* explicitly pinned:
+Each release day (1st for python, 2nd for terminal, 3rd for interactive stack) only rebuilds and republishes images whose pinned inputs changed since the previous month's `release/YY.MM` git tag. If nothing changed, the previous month's Harbor tag remains the current one and no new tag is pushed for that image. On any image that does rebuild, the refresh covers:
 
-- **Refreshed every month**: the Debian apt layer (security updates for `curl`, `git`, etc. that haven't been pinned to an exact version), any `pip install` / `npm install` without an explicit version, and upstream base-image layers that the maintainer has rebuilt.
-- **Not refreshed by the cron**: any dependency pinned via `ARG *_VERSION=…` with a `# renovate:` annotation, and any base image pinned by `@sha256:…` digest. These change only when a Renovate PR bumping the pin is merged into `main`.
+- **Refreshed on rebuild**: the Debian apt layer (security updates for `curl`, `git`, etc. that haven't been pinned to an exact version), any `pip install` / `npm install` without an explicit version, and upstream base-image layers that the maintainer has rebuilt since the pinned digest.
+- **Not touched by the cron**: any dependency pinned via `ARG *_VERSION=…` with a `# renovate:` annotation, and any base image pinned by `@sha256:…` digest. These change only when a Renovate PR bumping the pin is merged into `main` during the merge window.
 
-In practice that means **Renovate and the monthly cron are complementary**: Renovate keeps the pins from going stale by opening PRs against `main` (scheduled on the 1st of each month, same cadence as the cron), and the cron publishes a fresh `YY.MM` tag from whatever is on `main` at the time. If Renovate PRs are reviewed and merged before the cron fires, that month's tag ships with both the latest pins and the latest upstream patches. If they aren't merged, the tag still ships — just with last month's pins plus any unpinned upstream updates.
+In practice that means **Renovate and the release cadence are sequential, not concurrent**: Renovate opens PRs during days 5 – 27, humans review and merge them, and whatever state `main` is in on day 1 of the following month is what gets published. The deliberate separation prevents dependency churn from competing with release builds for the same calendar days.
 
 ### Pinning philosophy
 

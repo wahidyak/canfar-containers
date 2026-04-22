@@ -8,8 +8,10 @@ called out as a **pending confirmation** item for whoever operates the
 stack upstream.
 
 For the user-facing architecture overview, image descriptions, and
-pinning philosophy, see [`README.md`](../README.md). This document
-focuses on operational and maintenance concerns.
+pinning philosophy, see [`README.md`](../README.md). For the
+merge-window / release-window cadence policy, see
+[`RELEASE-CADENCE.md`](RELEASE-CADENCE.md). This document focuses on
+operational and maintenance concerns.
 
 ---
 
@@ -27,7 +29,8 @@ canfar-containers/
 │   ├── base/Dockerfile.retired
 │   └── build.sh                          # Old manual build script (references retired images)
 ├── doc/
-│   └── HANDOFF.md                        # This file
+│   ├── HANDOFF.md                        # This file
+│   └── RELEASE-CADENCE.md                # Merge window / release window policy
 └── dockerfiles/
     ├── python/{3.10,3.11,3.12,3.13,3.14}/Dockerfile
     ├── terminal/Dockerfile
@@ -122,32 +125,60 @@ Single workflow: [`.github/workflows/image-pipeline.yml`](../.github/workflows/i
 
 ### Triggers
 
-| Trigger          | Condition                                                       |
-|------------------|-----------------------------------------------------------------|
-| `schedule`       | `0 6 1 * *` — 06:00 UTC on the 1st of every month               |
-| `push`           | To `main`, only when `dockerfiles/**`, the workflow, `docker-bake.hcl`, or `renovate.json` change |
-| `pull_request`   | Same path filter as push                                        |
-| `workflow_dispatch` | Manual trigger from the Actions tab                          |
+| Trigger             | Condition                                                                             |
+|---------------------|---------------------------------------------------------------------------------------|
+| `schedule`          | Three crons: `0 6 1 * *`, `0 6 2 * *`, `0 6 3 * *` — days 1/2/3, 06:00 UTC            |
+| `push`              | To `main`, only when `dockerfiles/**`, the workflow, or `docker-bake.hcl` change      |
+| `pull_request`      | Same path filter as push (plus `renovate.json`)                                       |
+| `workflow_dispatch` | Manual trigger from the Actions tab                                                   |
 
-On `schedule` and `workflow_dispatch`, all image targets are force-rebuilt. On `push` and `pull_request`, only the targets affected by the changed paths are rebuilt (with dependency cascade — see below).
+The three `schedule` crons implement a **staggered release window**
+(day 1 → python, day 2 → terminal, day 3 → interactive stack:
+`webterm`, `vscode`, `marimo`), with a release anchor tag
+(`release/YY.MM`) pushed on day 3. On `schedule`, a **phase gate**
+restricts each day to its own subset of images.
+
+On `schedule` and `workflow_dispatch`, `detect-changes` diffs `HEAD`
+against the previous month's `release/YY.MM` git tag to decide which
+images actually need rebuilding. Unchanged images are skipped. If the
+previous tag is missing (first run, or tag was deleted), the workflow
+falls back to rebuilding everything in the current phase.
+
+On `push` and `pull_request`, the existing `dorny/paths-filter`
+cascade is used unchanged — no phase gate, no anchor-tag diff. PR
+builds never push to the registry.
+
+See [`RELEASE-CADENCE.md`](RELEASE-CADENCE.md) for the calendar,
+rules, and rationale.
 
 ### Jobs
 
-The workflow defines five jobs that fan out from a short setup stage:
+The workflow defines six jobs that fan out from a short setup stage:
 
-1. **`setup`** — generates `RELEASE_TAG=$(date +'%y.%m')` once so every
-   downstream job shares the same tag.
-2. **`detect-changes`** — runs `dorny/paths-filter@v3` to figure out
-   which image directories changed. Resolves the dependency cascade:
+1. **`setup`** — generates `RELEASE_TAG=$(date -u +'%y.%m')` once so
+   every downstream job shares the same tag.
+2. **`detect-changes`** — computes which images need to be built.
+   Behavior depends on the trigger:
+   - **schedule**: maps the cron that fired to a phase (`python` /
+     `terminal` / `interactive`), diffs `HEAD` against the previous
+     month's `release/YY.MM` git tag, and emits only the images in
+     this phase that actually changed. If the previous tag is missing,
+     falls back to rebuilding all images in the current phase.
+   - **workflow_dispatch**: uses the same release-tag diff but emits
+     every changed image across all phases (no phase gate).
+   - **push** / **pull_request**: uses `dorny/paths-filter@v3` on the
+     pushed commits (unchanged from the pre-cadence behavior).
+   Resolves the dependency cascade in all modes:
    - A change under `dockerfiles/python/3.12/**` forces `terminal` +
-     all downstream to rebuild (terminal is `FROM cadc/python:3.12`).
+     all downstream (webterm/vscode/marimo) to rebuild (terminal is
+     `FROM cadc/python:3.12`).
    - A change to `dockerfiles/terminal/**` or `docker-bake.hcl`
      cascades into `webterm` + `vscode` + `marimo`.
    - Other Python versions (3.10, 3.11, 3.13, 3.14) don't cascade.
    - If any of `webterm`/`vscode`/`marimo` is selected, `terminal` is
      force-added to the bake target list (see §3).
    Emits a `bake_targets` output (newline-separated) consumed by the
-   interactive-stack job.
+   interactive-stack job, plus a `phase` output for diagnostics.
 3. **`lint`** — runs `hadolint` recursively. Two rules globally ignored
    via [`.hadolint.yaml`](../.hadolint.yaml): `DL3008` (apt version
    pinning — we selectively unpin ABI-stable binaries) and `DL3013`
@@ -160,6 +191,14 @@ The workflow defines five jobs that fan out from a short setup stage:
    Executes `docker buildx bake` with the computed target list and
    `RELEASE_TAG` from step 1. On PRs, `push` is `false` and the
    registry login is skipped.
+6. **`tag-release`** — runs only on the day-3 scheduled cron, and only
+   if `python` and `interactive-stack` didn't fail. Creates and pushes
+   a `release/YY.MM` annotated git tag on the current commit. That tag
+   is the diff anchor for next month's `detect-changes`. Requires
+   `contents: write` permission on the default `GITHUB_TOKEN` (granted
+   locally to this job, not at workflow scope). If the tag already
+   exists (re-run of an already-tagged release), the job exits cleanly
+   without retagging.
 
 The `python` and `interactive-stack` jobs each cache Docker layers
 using `type=gha` (GitHub Actions cache) to speed up rebuilds.
@@ -176,6 +215,12 @@ On a successful non-PR run, the pipeline pushes:
 Python tags are **overwritten in place** each build. Interactive-stack
 tags are **per-month**, so e.g. `cadc/webterm:26.03` remains available
 after `cadc/webterm:26.04` is pushed.
+
+If an image's Dockerfile did not change between two consecutive
+release windows, that image is **not republished** for the new month.
+Its previous-month tag stays the newest in Harbor until something in
+the image (or an upstream it depends on, or `docker-bake.hcl`)
+actually changes.
 
 ## 5. External services and secrets
 
@@ -316,12 +361,21 @@ Concrete steps, derived from how the existing images are wired:
    - Add a filter entry under the `detect-changes` job's
      `dorny/paths-filter` configuration.
    - Add the filter output to the `detect-changes` job `outputs`.
-   - Update the "Resolve dependencies" step so upstream changes cascade
-     correctly.
+   - Update the "Diff against previous release tag" step to compute
+     a changed/unchanged boolean for the new image (and respect any
+     cascade it introduces).
+   - Update the "Resolve dependencies and apply phase gate" step so
+     the new image is emitted on the right day of the release window.
+     If it belongs to the interactive stack, add it to the
+     `interactive` case arm. If it deserves its own release day, add
+     a fourth cron to the `schedule:` block and a new phase arm.
    - Update the "Determine bake targets" step to include the new
      target.
 6. Confirm the Harbor `cadc/<newimage>` repository exists and the
    service account has push permission (see §5.1).
+7. If you added a new release-window day, update
+   [`RELEASE-CADENCE.md`](RELEASE-CADENCE.md) so the documented
+   calendar matches the crons.
 
 ## 8. Known state and orphans
 
@@ -382,6 +436,23 @@ itself. Each will surface as a real failure mode if left unaddressed.
    Issues to be enabled on the repo. If disabled, the dashboard is
    silently skipped (update PRs still open, but there's no single
    pane summary).
+8. **Tag-push permission.** The `tag-release` job pushes
+   `release/YY.MM` tags using the default `GITHUB_TOKEN` with
+   `permissions: contents: write` granted at job scope. If the
+   destination org restricts `GITHUB_TOKEN` default permissions to
+   read-only (Settings → Actions → General → Workflow permissions),
+   the job-scoped grant still applies, but any org-level branch/tag
+   protection rule that forbids `github-actions[bot]` from pushing
+   tags matching `release/*` will fail the job silently — the images
+   publish fine on day 3, but next month's diff has no anchor and
+   falls back to a full rebuild. Confirm the org policy allows the
+   bot to push release tags.
+9. **Merge-window enforcement.** The cadence policy in
+   [`RELEASE-CADENCE.md`](RELEASE-CADENCE.md) says "do not merge on
+   days 1 – 4." This is currently a convention, not enforced by
+   branch protection or by the workflow. If stricter enforcement is
+   wanted, add a GitHub ruleset on `main` that blocks merges on
+   those days of the month.
 
 ---
 
