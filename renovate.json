@@ -16,7 +16,7 @@
         "/(^|/)([Dd]ocker|[Cc]ontainer)file[^/]*$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s*(?:\\r\\n|\\n|\\r)ARG [A-Z0-9_]+=(?<currentValue>[^\\r\\n]+)"
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?(?: versioning=(?<versioning>\\S+))?\\s*(?:\\r\\n|\\n|\\r)ARG [A-Z0-9_]+=(?<currentValue>[^\\r\\n]+)"
       ],
       "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}"
     }
@@ -31,6 +31,16 @@
         "custom.regex"
       ],
       "versioning": "pep440"
+    },
+    {
+      "description": "deb datasource in Dockerfiles (e.g. CARTA via PPA) uses native deb versioning: epoch colons, ~prerelease suffixes, -N revisions",
+      "matchDatasources": [
+        "deb"
+      ],
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "versioning": "deb"
     }
   ]
 }

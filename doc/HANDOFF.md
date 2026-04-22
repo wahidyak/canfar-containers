@@ -36,7 +36,8 @@ canfar-containers/
     ├── terminal/Dockerfile
     ├── webterm/Dockerfile
     ├── openvscode/Dockerfile
-    └── marimo/Dockerfile
+    ├── marimo/Dockerfile
+    └── carta/Dockerfile
 ```
 
 Each image directory contains exactly one `Dockerfile`. There are no
@@ -59,6 +60,10 @@ python:<ver>-slim (pinned @sha) ▶ cadc/python:<ver>   (ver ∈ 3.10…3.14)
                                                                 ├─ cadc/webterm:<RELEASE_TAG>
                                                                 ├─ cadc/vscode:<RELEASE_TAG>
                                                                 └─ cadc/marimo:<RELEASE_TAG>
+
+ubuntu:24.04 (pinned @sha)      ▶ cadc/carta:<CARTA_TAG>
+  + cartavis-team PPA             (standalone; does NOT inherit from cadc/terminal)
+                                  (CARTA_TAG = upstream CARTA version, e.g. "5.1.0")
 ```
 
 - `cadc/python:<ver>` is tagged by Python version only (e.g.
@@ -67,12 +72,23 @@ python:<ver>-slim (pinned @sha) ▶ cadc/python:<ver>   (ver ∈ 3.10…3.14)
 - `cadc/terminal`, `cadc/webterm`, `cadc/vscode`, `cadc/marimo` are
   tagged with `<RELEASE_TAG>`, which the workflow generates as
   `$(date +'%y.%m')` — e.g. `26.04` for an April 2026 build.
+- `cadc/carta` is tagged with `<CARTA_TAG>`, the upstream CARTA version
+  (e.g. `5.1.0`), **deliberately decoupled from `<RELEASE_TAG>`** so the
+  tag reflects what astronomers install rather than our monthly cadence.
+  CI derives `CARTA_TAG` from `dockerfiles/carta/Dockerfile`'s
+  `ARG CARTA_VERSION` by stripping the `~noble1` PPA-rebuild suffix:
+  `5.1.0~noble1 → 5.1.0`. Renovate updates `CARTA_VERSION` via its `deb`
+  datasource; the tag follows automatically on the next rebuild.
 - The `vscode` image is built from the `dockerfiles/openvscode/`
   directory (directory named `openvscode`, published image named
   `vscode`).
 - Terminal is the only downstream image based on Python 3.12
   specifically. The other Python versions (3.10, 3.11, 3.13, 3.14) are
   published but not consumed elsewhere in this repo.
+- `cadc/carta` is a standalone leaf — it builds from `ubuntu:24.04`
+  (dictated by the cartavis-team PPA being Ubuntu-only) and does not
+  inherit from `cadc/terminal`. The other images here are all
+  Debian-based via `python:slim`.
 
 Ports and entrypoints exposed by each interactive image:
 
@@ -82,6 +98,7 @@ Ports and entrypoints exposed by each interactive image:
 | `webterm`    | 5000   | `CMD ["/cadc/startup.sh"]`                        |
 | `vscode`     | 5000   | `ENTRYPOINT ["/bin/bash", "-e", "/cadc/startup.sh"]` (runs as user `vscode`) |
 | `marimo`     | 5000   | `ENTRYPOINT ["/bin/bash", "-e", "/cadc/startup.sh"]` |
+| `carta`      | 5000   | `CMD ["carta", "--no_browser", "--port", "5000"]` |
 
 ## 3. Build orchestration
 
@@ -94,9 +111,10 @@ parallel as a matrix job in the workflow. Each version lives in its own
 versions.
 
 **b) `docker buildx bake` for the interactive stack.**
-`docker-bake.hcl` defines four targets (`terminal`, `webterm`, `vscode`,
-`marimo`). The key mechanism here is the `contexts` block on each
-downstream target:
+`docker-bake.hcl` defines five targets (`terminal`, `webterm`, `vscode`,
+`marimo`, `carta`). For webterm / vscode / marimo the key mechanism is
+the `contexts` block, which wires each downstream target to the
+locally-built terminal:
 
 ```hcl
 target "webterm" {
@@ -112,12 +130,18 @@ This tells bake: "when the webterm Dockerfile says
 locally-built `terminal` target instead of pulling from the registry."
 
 This trick is what allows the CI pipeline to build and push all four
-interactive images in a single bake invocation without ever pushing an
-intermediate terminal tag to the registry first. It also means the
-workflow's `detect-changes` job must always include `terminal` in the
-bake target list whenever any downstream target is selected, or the
-bake substitution won't apply and the build will attempt a registry
+terminal-derived interactive images in a single bake invocation without
+ever pushing an intermediate terminal tag to the registry first. It also
+means the workflow's `detect-changes` job must always include `terminal`
+in the bake target list whenever any downstream target is selected, or
+the bake substitution won't apply and the build will attempt a registry
 pull. This invariant is enforced explicitly in the workflow; see §4.
+
+The fifth target, `carta`, is a standalone leaf — it has no `contexts`
+block and builds directly from `ubuntu:24.04` (plus the cartavis-team
+PPA). It does not force a terminal rebuild and is not affected by
+terminal changes; selecting it in isolation will not pull `terminal`
+into the bake target list.
 
 ## 4. CI/CD workflow
 
@@ -133,10 +157,11 @@ Single workflow: [`.github/workflows/image-pipeline.yml`](../.github/workflows/i
 | `workflow_dispatch` | Manual trigger from the Actions tab                                                   |
 
 The three `schedule` crons implement a **staggered release window**
-(day 1 → python, day 2 → terminal, day 3 → interactive stack:
-`webterm`, `vscode`, `marimo`), with a release anchor tag
-(`release/YY.MM`) pushed on day 3. On `schedule`, a **phase gate**
-restricts each day to its own subset of images.
+(day 1 → python, day 2 → terminal, day 3 → interactive stack
+including `webterm`, `vscode`, `marimo`, and the standalone `carta`),
+with a release anchor tag (`release/YY.MM`) pushed on day 3. On
+`schedule`, a **phase gate** restricts each day to its own subset of
+images.
 
 On `schedule` and `workflow_dispatch`, `detect-changes` diffs `HEAD`
 against the previous month's `release/YY.MM` git tag to decide which
@@ -170,13 +195,20 @@ The workflow defines six jobs that fan out from a short setup stage:
      pushed commits (unchanged from the pre-cadence behavior).
    Resolves the dependency cascade in all modes:
    - A change under `dockerfiles/python/3.12/**` forces `terminal` +
-     all downstream (webterm/vscode/marimo) to rebuild (terminal is
-     `FROM cadc/python:3.12`).
+     all Debian-based downstream (webterm/vscode/marimo) to rebuild
+     (terminal is `FROM cadc/python:3.12`).
    - A change to `dockerfiles/terminal/**` or `docker-bake.hcl`
      cascades into `webterm` + `vscode` + `marimo`.
    - Other Python versions (3.10, 3.11, 3.13, 3.14) don't cascade.
+   - **CARTA is a standalone leaf.** Its rebuild trigger is its own
+     directory or `docker-bake.hcl`; it does not cascade from
+     `terminal` or `python`, and changes to CARTA do not cascade
+     elsewhere. It shares day 3 of the release window with the
+     terminal-derived interactive stack but is phase-gated
+     independently.
    - If any of `webterm`/`vscode`/`marimo` is selected, `terminal` is
-     force-added to the bake target list (see §3).
+     force-added to the bake target list (see §3). `carta` does NOT
+     force terminal; the two subsystems are independent.
    Emits a `bake_targets` output (newline-separated) consumed by the
    interactive-stack job, plus a `phase` output for diagnostics.
 3. **`lint`** — runs `hadolint` recursively. Two rules globally ignored
@@ -188,9 +220,14 @@ The workflow defines six jobs that fan out from a short setup stage:
    `docker/build-push-action@v6`. Runs only if `python=true`. On PRs,
    `push` is set to `false` and the registry login is skipped.
 5. **`interactive-stack`** — runs only if `bake_targets` is non-empty.
-   Executes `docker buildx bake` with the computed target list and
-   `RELEASE_TAG` from step 1. On PRs, `push` is `false` and the
-   registry login is skipped.
+   Before invoking bake, a "Derive CARTA tag" step greps
+   `dockerfiles/carta/Dockerfile` for `ARG CARTA_VERSION=` and strips
+   the `~noble1` PPA-rebuild suffix, exporting the result as
+   `CARTA_TAG` (e.g. `5.1.0~noble1 → 5.1.0`). Then executes
+   `docker buildx bake` with the computed target list, `RELEASE_TAG`
+   (monthly, for the Debian stack) and `CARTA_TAG` (upstream version,
+   for CARTA) both in env. On PRs, `push` is `false` and the registry
+   login is skipped.
 6. **`tag-release`** — runs only on the day-3 scheduled cron, and only
    if `python` and `interactive-stack` didn't fail. Creates and pushes
    a `release/YY.MM` annotated git tag on the current commit. That tag
@@ -210,11 +247,14 @@ On a successful non-PR run, the pipeline pushes:
 | Job                  | Tags pushed (assuming all targets selected)                      |
 |----------------------|------------------------------------------------------------------|
 | `python` (matrix)    | `images.canfar.net/cadc/python:{3.10, 3.11, 3.12, 3.13, 3.14}`   |
-| `interactive-stack`  | `images.canfar.net/cadc/{terminal, webterm, vscode, marimo}:<YY.MM>` |
+| `interactive-stack`  | `images.canfar.net/cadc/{terminal, webterm, vscode, marimo}:<YY.MM>`, `images.canfar.net/cadc/carta:<CARTA_VERSION>` |
 
-Python tags are **overwritten in place** each build. Interactive-stack
-tags are **per-month**, so e.g. `cadc/webterm:26.03` remains available
-after `cadc/webterm:26.04` is pushed.
+Python tags are **overwritten in place** each build. Debian interactive-stack
+tags (`terminal`, `webterm`, `vscode`, `marimo`) are **per-month**, so e.g.
+`cadc/webterm:26.03` remains available after `cadc/webterm:26.04` is pushed.
+`cadc/carta` tags are **per-upstream-version** (e.g. `5.1.0`), so a month
+with no CARTA release doesn't push a new tag; a month with a CARTA bump
+pushes a brand-new tag and the previous one stays available.
 
 If an image's Dockerfile did not change between two consecutive
 release windows, that image is **not republished** for the new month.
@@ -238,10 +278,12 @@ provisioned or managed from this repo.
     workflow will silently skip login if the names don't match; the
     subsequent push step will fail with an auth error).
   - That the service account behind those credentials has push rights
-    to the `cadc/` project for all five image names
-    (`python`, `terminal`, `webterm`, `vscode`, `marimo`). Harbor is
-    per-project + per-repo ACL'd; a newly-introduced image name may
-    require the repo to be created and permissions widened.
+    to the `cadc/` project for all six image names
+    (`python`, `terminal`, `webterm`, `vscode`, `marimo`, `carta`).
+    Harbor is per-project + per-repo ACL'd; a newly-introduced image
+    name may require the repo to be created and permissions widened.
+    `cadc/carta` is a new repository for this project and will almost
+    certainly need to be created explicitly before the first push.
   - Credential rotation policy (who rotates, how often, what notifies
     GitHub Actions of the new secret value).
 
@@ -409,9 +451,11 @@ itself. Each will surface as a real failure mode if left unaddressed.
 2. **Harbor project layout and robot-account permissions.** Confirm
    the `cadc/` project exists on `images.canfar.net` and that the
    service account behind the secrets has push rights to
-   `cadc/{python, terminal, webterm, vscode, marimo}`. Any image name
-   that has never been pushed before may require a new Harbor repo
-   and/or updated ACL.
+   `cadc/{python, terminal, webterm, vscode, marimo, carta}`. Any
+   image name that has never been pushed before may require a new
+   Harbor repo and/or updated ACL — in particular `cadc/carta` is
+   newly introduced by this stack and will likely need the robot
+   account's ACL extended.
 3. **Tag format.** The workflow publishes interactive-stack images
    with tag `YY.MM` (e.g. `26.04`). Confirm this matches the
    project's expected tagging scheme. Alternative common choices

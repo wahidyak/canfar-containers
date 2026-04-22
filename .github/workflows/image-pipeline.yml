@@ -7,7 +7,7 @@
 # Release cadence (see doc/RELEASE-CADENCE.md for the full policy):
 #   Day 1 06:00 UTC - Python runtime images (3.10 - 3.14)
 #   Day 2 06:00 UTC - Terminal (depends on python:3.12)
-#   Day 3 06:00 UTC - Interactive stack (webterm, vscode, marimo)
+#   Day 3 06:00 UTC - Interactive stack (webterm, vscode, marimo, carta)
 #                     On success, a release/<YY.MM> git tag is created.
 #   Day 4           - Buffer / freeze, no publishes
 #   Days 5 - 27     - Merge window: Renovate opens PRs, humans merge freely.
@@ -36,7 +36,7 @@ on:
     - cron: '0 6 1 * *'
     # Day 2: Terminal base image
     - cron: '0 6 2 * *'
-    # Day 3: Interactive stack (webterm, vscode, marimo) + release tag
+    # Day 3: Interactive stack (webterm, vscode, marimo, carta) + release tag
     - cron: '0 6 3 * *'
   # On push to main, only rebuild when relevant files change
   push:
@@ -87,6 +87,7 @@ jobs:
       webterm: ${{ steps.filter.outputs.webterm }}
       vscode: ${{ steps.filter.outputs.vscode }}
       marimo: ${{ steps.filter.outputs.marimo }}
+      carta: ${{ steps.filter.outputs.carta }}
       bake_targets: ${{ steps.targets.outputs.bake_targets }}
       phase: ${{ steps.phase.outputs.phase }}
     steps:
@@ -124,7 +125,7 @@ jobs:
 
           if ! git rev-parse --verify "refs/tags/$LAST_TAG" >/dev/null 2>&1; then
             echo "Tag $LAST_TAG not found; falling back to full rebuild."
-            for t in python terminal webterm vscode marimo; do
+            for t in python terminal webterm vscode marimo carta; do
               echo "${t}=true" >> $GITHUB_OUTPUT
             done
             exit 0
@@ -162,6 +163,15 @@ jobs:
             fi
           done
 
+          # CARTA is a leaf: no cascade from terminal or python (different
+          # distro base -- Ubuntu vs. Debian). Rebuild iff its own directory
+          # or docker-bake.hcl changed.
+          if changed dockerfiles/carta/ docker-bake.hcl; then
+            echo "carta=true" >> $GITHUB_OUTPUT
+          else
+            echo "carta=false" >> $GITHUB_OUTPUT
+          fi
+
       # On push / pull_request: existing path-filter logic (unchanged).
       - name: Detect changed paths (push/PR)
         if: github.event_name == 'push' || github.event_name == 'pull_request'
@@ -181,6 +191,8 @@ jobs:
               - 'dockerfiles/openvscode/**'
             marimo:
               - 'dockerfiles/marimo/**'
+            carta:
+              - 'dockerfiles/carta/**'
             bake-config:
               - 'docker-bake.hcl'
 
@@ -201,6 +213,7 @@ jobs:
             W="${{ steps.diff.outputs.webterm }}"
             V="${{ steps.diff.outputs.vscode }}"
             M="${{ steps.diff.outputs.marimo }}"
+            C="${{ steps.diff.outputs.carta }}"
             echo "Scheduled run, phase=$PHASE"
             case "$PHASE" in
               python)
@@ -209,6 +222,7 @@ jobs:
                 echo "webterm=false"    >> $GITHUB_OUTPUT
                 echo "vscode=false"     >> $GITHUB_OUTPUT
                 echo "marimo=false"     >> $GITHUB_OUTPUT
+                echo "carta=false"      >> $GITHUB_OUTPUT
                 ;;
               terminal)
                 echo "python=false"     >> $GITHUB_OUTPUT
@@ -216,6 +230,7 @@ jobs:
                 echo "webterm=false"    >> $GITHUB_OUTPUT
                 echo "vscode=false"     >> $GITHUB_OUTPUT
                 echo "marimo=false"     >> $GITHUB_OUTPUT
+                echo "carta=false"      >> $GITHUB_OUTPUT
                 ;;
               interactive)
                 echo "python=false"     >> $GITHUB_OUTPUT
@@ -223,6 +238,7 @@ jobs:
                 echo "webterm=$W"       >> $GITHUB_OUTPUT
                 echo "vscode=$V"        >> $GITHUB_OUTPUT
                 echo "marimo=$M"        >> $GITHUB_OUTPUT
+                echo "carta=$C"         >> $GITHUB_OUTPUT
                 ;;
               *)
                 echo "Unknown phase '$PHASE'; skipping all builds." >&2
@@ -231,6 +247,7 @@ jobs:
                 echo "webterm=false"    >> $GITHUB_OUTPUT
                 echo "vscode=false"     >> $GITHUB_OUTPUT
                 echo "marimo=false"     >> $GITHUB_OUTPUT
+                echo "carta=false"      >> $GITHUB_OUTPUT
                 ;;
             esac
           elif [[ "$EVENT" == "workflow_dispatch" ]]; then
@@ -241,10 +258,13 @@ jobs:
             echo "webterm=${{ steps.diff.outputs.webterm }}"   >> $GITHUB_OUTPUT
             echo "vscode=${{ steps.diff.outputs.vscode }}"     >> $GITHUB_OUTPUT
             echo "marimo=${{ steps.diff.outputs.marimo }}"     >> $GITHUB_OUTPUT
+            echo "carta=${{ steps.diff.outputs.carta }}"       >> $GITHUB_OUTPUT
           else
-            # push / pull_request: path-filter cascade (unchanged from
-            # pre-cadence behavior).
+            # push / pull_request: path-filter cascade.
+            # CARTA is a leaf (standalone Ubuntu base) so it does NOT cascade
+            # from terminal / python / bake-config -- only its own dir counts.
             echo "python=${{ steps.changes.outputs.python }}" >> $GITHUB_OUTPUT
+            echo "carta=${{ steps.changes.outputs.carta }}"   >> $GITHUB_OUTPUT
             TERMINAL="${{ steps.changes.outputs.terminal }}"
             PYTHON_BASE="${{ steps.changes.outputs.python-terminal-base }}"
             BAKE_CONFIG="${{ steps.changes.outputs.bake-config }}"
@@ -270,7 +290,12 @@ jobs:
           WEBTERM="${{ steps.filter.outputs.webterm }}"
           VSCODE="${{ steps.filter.outputs.vscode }}"
           MARIMO="${{ steps.filter.outputs.marimo }}"
+          CARTA="${{ steps.filter.outputs.carta }}"
           TERMINAL="${{ steps.filter.outputs.terminal }}"
+          # webterm / vscode / marimo all inherit from terminal via bake's
+          # `contexts` substitution -- terminal must be in the target list
+          # whenever any of them is selected. CARTA is standalone; it does
+          # NOT force a terminal rebuild.
           if [[ "$WEBTERM" == "true" || "$VSCODE" == "true" || "$MARIMO" == "true" ]]; then
             TERMINAL="true"
           fi
@@ -286,6 +311,9 @@ jobs:
           fi
           if [[ "$MARIMO" == "true" ]]; then
             TARGETS="${TARGETS:+$TARGETS$'\n'}marimo"
+          fi
+          if [[ "$CARTA" == "true" ]]; then
+            TARGETS="${TARGETS:+$TARGETS$'\n'}carta"
           fi
           echo "bake_targets<<EOF" >> $GITHUB_OUTPUT
           echo "$TARGETS" >> $GITHUB_OUTPUT
@@ -338,10 +366,13 @@ jobs:
           cache-to: type=gha,mode=max
 
   # --- Job: Interactive Stack (Bake Build) ---
-  # Builds terminal / webterm / vscode / marimo using Docker Bake, respecting
-  # the dependency chain via bake's `contexts` substitution. On day-2 scheduled
-  # builds this typically runs with just `terminal`; on day-3 it runs with
-  # the selected downstream images (plus terminal auto-added for substitution).
+  # Builds terminal / webterm / vscode / marimo / carta using Docker Bake.
+  # The webterm / vscode / marimo images cascade from terminal via bake's
+  # `contexts` substitution. CARTA is a standalone leaf target (Ubuntu-based,
+  # no cascade from terminal). On day-2 scheduled builds this typically runs
+  # with just `terminal`; on day-3 it runs with the selected day-3 images
+  # (webterm / vscode / marimo / carta, plus terminal auto-added for
+  # substitution when any of webterm/vscode/marimo is selected).
   interactive-stack:
     name: Interactive Stack
     needs: [setup, lint, detect-changes]
@@ -360,10 +391,30 @@ jobs:
           password: ${{ secrets.CANFAR_REGISTRY_PASSWORD }}
       - name: Show targets to build
         run: 'echo "Building targets: ${{ needs.detect-changes.outputs.bake_targets }}"'
+      # Derive the CARTA tag from the Dockerfile's CARTA_VERSION arg so it
+      # tracks upstream CARTA releases rather than the monthly RELEASE_TAG.
+      # Strips the "~noble1" PPA-rebuild suffix: "5.1.0~noble1" -> "5.1.0".
+      # Falls back to a safe placeholder if the Dockerfile is absent or the
+      # arg can't be parsed; bake will still build, just with tag "unknown".
+      - name: Derive CARTA tag
+        id: carta
+        run: |
+          set -euo pipefail
+          DOCKERFILE=dockerfiles/carta/Dockerfile
+          if [[ -f "$DOCKERFILE" ]]; then
+            CARTA_VERSION=$(awk -F= '/^ARG CARTA_VERSION=/ {print $2; exit}' "$DOCKERFILE")
+            CARTA_TAG="${CARTA_VERSION%%~*}"
+            CARTA_TAG="${CARTA_TAG:-unknown}"
+          else
+            CARTA_TAG="unknown"
+          fi
+          echo "carta_tag=$CARTA_TAG" >> $GITHUB_OUTPUT
+          echo "Derived CARTA_TAG=$CARTA_TAG"
       - name: Build and Push (Bake)
         uses: docker/bake-action@v5
         env:
           RELEASE_TAG: ${{ needs.setup.outputs.release_tag }}
+          CARTA_TAG: ${{ steps.carta.outputs.carta_tag }}
         with:
           targets: ${{ needs.detect-changes.outputs.bake_targets }}
           push: ${{ github.event_name != 'pull_request' }}

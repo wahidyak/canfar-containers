@@ -11,7 +11,7 @@ every monthly `YY.MM` tag is cut from a stable, deliberately-frozen tree.
 |-----------------|---------------------|----------------------------------------------------------------------------------------------|
 | 1  (06:00 UTC)  | Release: python     | `cadc/python:{3.10, 3.11, 3.12, 3.13, 3.14}` rebuilt & pushed (if changed)                   |
 | 2  (06:00 UTC)  | Release: base       | `cadc/terminal:YY.MM` rebuilt & pushed (if changed)                                          |
-| 3  (06:00 UTC)  | Release: stack      | `cadc/webterm:YY.MM`, `cadc/vscode:YY.MM`, `cadc/marimo:YY.MM` rebuilt & pushed (if changed) |
+| 3  (06:00 UTC)  | Release: stack      | `cadc/webterm:YY.MM`, `cadc/vscode:YY.MM`, `cadc/marimo:YY.MM` rebuilt & pushed (if changed); `cadc/carta:<upstream version>` rebuilt & pushed on CARTA version bump |
 | 3  (post-build) | Release: mark       | `release/YY.MM` git tag pushed on the commit we built from                                   |
 | 4               | Buffer              | No publishes, no merges. Absorbs day-3 re-runs and bakes in a freeze gap                     |
 | 5 – 27          | Merge window        | Renovate opens PRs; humans review & merge. PRs lint + build but do **not** push              |
@@ -54,6 +54,10 @@ Within a single phase, the existing cascade still applies:
   into webterm / vscode / marimo.
 - Changes to other Python versions (3.10, 3.11, 3.13, 3.14) do not
   cascade — those images are published standalone.
+- **CARTA does not participate in the cascade.** It is a standalone leaf
+  built from `ubuntu:24.04` (dictated by the cartavis-team PPA being
+  Ubuntu-only), not from `cadc/terminal`. A change to `dockerfiles/carta/`
+  or `docker-bake.hcl` rebuilds CARTA; changes elsewhere do not.
 
 The cascade is evaluated during each phase's diff. So a `python/3.12`
 change merged during the previous merge window gets published on day 1
@@ -90,6 +94,9 @@ and cascades into the interactive stack on day 3.
 - **`workflow_dispatch` does not tag a release.** Only the day-3
   scheduled run tags. Manual runs are treated as hotfixes and do not
   alter the monthly anchor.
+- **CARTA uses a different tag scheme.** `cadc/carta:<upstream
+  version>` (e.g. `5.1.0`), not `cadc/carta:<YY.MM>`. A month with no
+  CARTA bump publishes no new CARTA tag.
 
 ## Adjusting the cadence
 
