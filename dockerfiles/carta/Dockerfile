@@ -32,35 +32,52 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # renovate: datasource=deb depName=carta registryUrl=https://ppa.launchpadcontent.net/cartavis-team/carta/ubuntu?suite=noble&components=main&binaryArch=amd64 versioning=deb
 ARG CARTA_VERSION=5.1.0~noble1
 
-# CARTAvis PPA signing key fingerprint (Launchpad-hosted). Not Renovate-tracked:
-# a change here means CARTAvis rotated their key, a security-relevant event.
-# Verified against three independent sources (2026-04-22):
-#   1. Launchpad HTML page fingerprint field
-#   2. Launchpad JSON API (signing_key_fingerprint in LP.cache)
-#   3. keyserver.ubuntu.com (UID: "Launchpad PPA for CARTAvis")
-# Key is 4096-bit RSA, created 2021-03-16.
+# Install CARTA from the PPA with explicit key verification.
+#
+# PPA signing key fingerprint (Launchpad-hosted) is pinned as a literal
+# inside the RUN block -- deliberately NOT an ARG, because (a) it must not
+# be overridable at build time (a change means CARTAvis rotated their key,
+# which is a security-relevant event that requires a reviewed Dockerfile
+# edit, not a build-invocation override) and (b) ARG form triggers buildkit's
+# SecretsUsedInArgOrEnv lint (false positive; fingerprints are public, but
+# cleaner to avoid the check entirely). Verified against three independent
+# sources (2026-04-22): Launchpad HTML page, Launchpad JSON API
+# (signing_key_fingerprint), and keyserver.ubuntu.com ("Launchpad PPA for
+# CARTAvis" UID). Key is 4096-bit RSA, created 2021-03-16.
 # https://launchpad.net/~cartavis-team/+archive/ubuntu/carta
-ARG CARTA_PPA_KEY_FINGERPRINT=49CD6FAB8EA28584DBDCD04186B78FB18F11E91C
-
-# Install CARTA from the PPA with explicit key verification. Single RUN layer
-# keeps the image slim by not materializing intermediate apt state.
+#
+# Key handling: fetch the armored signing key over HTTPS from
+# keyserver.ubuntu.com (TLS-trusted), dearmor it locally, and verify the
+# resulting fingerprint matches our pinned constant before trusting it for
+# apt. This avoids dirmngr entirely (it has bootstrapping issues in buildkit
+# sandboxes: no /root/.gnupg until interactive gpg creates it) and, more
+# importantly, makes the fingerprint check a hard build-time gate -- if a
+# MITM or a keyserver compromise swaps the key, dearmor+fingerprint-compare
+# still fails closed. Single RUN layer keeps the image slim.
 # hadolint ignore=DL3008
-RUN apt-get update && \
+RUN PPA_KEY_FPR="49CD6FAB8EA28584DBDCD04186B78FB18F11E91C" && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
+        curl \
         gnupg && \
     mkdir -p /etc/apt/keyrings && \
-    gpg --no-default-keyring --keyring /etc/apt/keyrings/cartavis.gpg \
-        --keyserver keyserver.ubuntu.com \
-        --recv-keys "${CARTA_PPA_KEY_FINGERPRINT}" && \
+    curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x${PPA_KEY_FPR}" \
+        | gpg --dearmor > /etc/apt/keyrings/cartavis.gpg && \
     chmod 644 /etc/apt/keyrings/cartavis.gpg && \
+    ACTUAL_FPR="$(gpg --show-keys --with-colons --with-fingerprint /etc/apt/keyrings/cartavis.gpg \
+                    | awk -F: '/^fpr:/ {print $10; exit}')" && \
+    if [[ "${ACTUAL_FPR}" != "${PPA_KEY_FPR}" ]]; then \
+        echo "ERROR: fetched PPA key fingerprint ${ACTUAL_FPR} does not match pinned ${PPA_KEY_FPR}" >&2; \
+        exit 1; \
+    fi && \
     echo "deb [signed-by=/etc/apt/keyrings/cartavis.gpg] https://ppa.launchpadcontent.net/cartavis-team/carta/ubuntu noble main" \
         > /etc/apt/sources.list.d/cartavis.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends "carta=${CARTA_VERSION}" && \
-    apt-get purge -y --auto-remove gnupg && \
+    apt-get purge -y --auto-remove curl gnupg && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /var/tmp/*
+    rm -rf /var/lib/apt/lists/* /var/tmp/* /root/.gnupg
 
 WORKDIR /carta
 RUN chmod -R a+rwx /carta
