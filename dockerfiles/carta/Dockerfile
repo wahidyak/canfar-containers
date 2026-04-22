@@ -91,17 +91,53 @@ EXPOSE 5000
 ENV HOME=/carta
 ENV CARTA_DOCKER_DEPLOYMENT=1
 
+# Startup wrapper: pick a sensible starting folder for the file browser.
+# Skaha mounts ARC at /arc inside the pod (/arc/projects shared across the
+# science platform, /arc/home/<user> per-user). Astronomers overwhelmingly
+# want to start at /arc/projects so shared datasets are one click away;
+# they can still navigate up to /arc/home from there because we set
+# --top_level_folder to /arc.
+#
+# Fallback chain: /arc/projects -> /arc/home/$USER -> /carta. This keeps
+# the session launching even if a mount is slow/missing (the CARTA browser
+# UI still opens; the user can navigate manually).
+#
+# --debug_no_auth: CARTA token check disabled because Skaha already gates
+# pod access via its own per-user auth and does not forward CARTA's
+# auto-generated token to the browser. Without this, every WebSocket
+# connection fails with "Incorrect or missing auth token supplied".
+#
+# --top_level_folder /arc sandboxes the file browser below /arc (users
+# cannot navigate up into /usr, /etc, etc. -- not a security boundary,
+# just a cleaner UX for a data-viewer image).
+#
+# hadolint ignore=SC2016
+RUN printf '%s\n' \
+    '#!/bin/bash' \
+    'set -euo pipefail' \
+    '' \
+    '# Pick starting folder: prefer /arc/projects, fall back progressively.' \
+    'if [[ -d /arc/projects ]]; then' \
+    '  START_DIR=/arc/projects' \
+    'elif [[ -n "${USER:-}" && -d "/arc/home/${USER}" ]]; then' \
+    '  START_DIR="/arc/home/${USER}"' \
+    'else' \
+    '  START_DIR=/carta' \
+    'fi' \
+    'echo "[CARTA] Starting file browser at ${START_DIR}"' \
+    '' \
+    'exec carta \\' \
+    '  --no_browser \\' \
+    '  --debug_no_auth \\' \
+    '  --port 5000 \\' \
+    '  --top_level_folder /arc \\' \
+    '  "${START_DIR}"' \
+    > /usr/local/bin/carta-entrypoint.sh \
+    && chmod +x /usr/local/bin/carta-entrypoint.sh
+
 LABEL org.opencontainers.image.title="cadc/carta"
 LABEL org.opencontainers.image.description="CARTA: Cube Analysis and Rendering Tool for Astronomy"
 LABEL org.opencontainers.image.source="https://github.com/opencadc/canfar-containers"
 LABEL org.opencontainers.image.licenses="GPL-3.0-or-later"
 
-# --debug_no_auth disables CARTA's own per-session token check. This is safe
-# and necessary in the Skaha contributed-session model: Skaha already gates
-# access to the pod via its own auth (only the logged-in, authorized user
-# can reach the ingress at all), and Skaha's proxy does NOT forward CARTA's
-# auto-generated token to the browser. Without this flag every WebSocket
-# connection fails with "Incorrect or missing auth token supplied" and the
-# session appears disconnected. Matches the behavior of the sibling webterm
-# / vscode / marimo images, which likewise delegate auth to Skaha.
-CMD ["carta", "--no_browser", "--debug_no_auth", "--port", "5000"]
+CMD ["/usr/local/bin/carta-entrypoint.sh"]
