@@ -98,7 +98,7 @@ Ports and entrypoints exposed by each interactive image:
 | `webterm`    | 5000   | `CMD ["/cadc/startup.sh"]`                        |
 | `vscode`     | 5000   | `ENTRYPOINT ["/bin/bash", "-e", "/cadc/startup.sh"]` (runs as user `vscode`) |
 | `marimo`     | 5000   | `ENTRYPOINT ["/bin/bash", "-e", "/cadc/startup.sh"]` |
-| `carta`      | 5000   | `CMD ["carta", "--no_browser", "--port", "5000"]` |
+| `carta`      | 3002   | `CMD ["carta", "--no_browser"]` (Skaha's `carta` session launcher overrides `CMD` and supplies `--port`, `--http_url_prefix`, `--top_level_folder`, `--debug_no_auth`, `--idle_timeout`, `--enable_scripting`, and the starting folder per-session) |
 
 ## 3. Build orchestration
 
