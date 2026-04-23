@@ -65,7 +65,7 @@ The images follow a modular layered model. All images are published to `images.c
 6. **CARTA image (`carta`)**
    - **Inherits**: `ubuntu:24.04` (digest-pinned, tracked by Renovate)
    - **Upstream**: CARTA is distributed exclusively via the `cartavis-team` PPA for Ubuntu. No Debian or RHEL build exists, so this image does **not** share the Debian-based `cadc/terminal` base and is a standalone leaf in the build graph.
-   - **Web UI**: CARTA on port 5000 (`--no_browser --port 5000`), matching the CANFAR Skaha contributed-session contract.
+   - **Web UI**: CARTA launched by Skaha's first-class `carta` session type. The image exposes CARTA's upstream default port 3002 and ships a bare `CMD ["carta", "--no_browser"]`; Skaha's per-session launcher overrides the `CMD` and supplies runtime flags itself (`--port`, `--http_url_prefix`, `--top_level_folder`, `--debug_no_auth`, `--idle_timeout`, `--enable_scripting`, and the starting folder), so those concerns are deliberately **not** baked into the image.
    - **Pinning**: the apt version string of the `carta` package is tracked via Renovate's `deb` datasource pointed at the PPA's Packages index — this catches both upstream releases (e.g. `5.1.0 → 5.2.0`) and PPA rebuilds with the same upstream version (e.g. `~noble1 → ~noble2`). The PPA signing key fingerprint is manually pinned (security-sensitive; deliberately not Renovate-tracked).
    - **Tagging**: `cadc/carta:<upstream version>` (e.g. `cadc/carta:5.1.0`), **not** the `YY.MM` cadence of the rest of the interactive stack. The tag tracks what astronomers actually install; CI derives it from the Dockerfile's `CARTA_VERSION` arg by stripping the `~noble1` suffix.
 

@@ -1,9 +1,17 @@
 # syntax=docker/dockerfile:1
 #
-# CANFAR CARTA Image (Contributed Session)
+# CANFAR CARTA Image
 #
-# CARTA (Cube Analysis and Rendering Tool for Astronomy) served on port 5000
-# for launching as a CANFAR "contributed" session via Skaha.
+# CARTA (Cube Analysis and Rendering Tool for Astronomy), launched by Skaha
+# as a first-class "carta" session type (not "contributed"). Skaha's carta
+# launcher wraps this image: it invokes `carta` directly with its own flags
+# (--port, --http_url_prefix, --top_level_folder, --debug_no_auth,
+# --idle_timeout, starting folder, ...), overriding any CMD we set here.
+# Consequently this Dockerfile intentionally matches the upstream reference
+# at opencadc/science-containers/Dockerfiles/carta: bare `carta --no_browser`
+# CMD, EXPOSE the CARTA default port 3002. The CMD is effectively dead code
+# under Skaha but is retained (a) so `docker run cadc/carta` still works
+# standalone and (b) to document the minimum invocation contract.
 #
 # Upstream base: ubuntu:24.04 (Noble Numbat). CARTA is distributed exclusively
 # via the cartavis-team PPA for Ubuntu Jammy (22.04) and Noble (24.04) - no
@@ -82,11 +90,13 @@ RUN PPA_KEY_FPR="49CD6FAB8EA28584DBDCD04186B78FB18F11E91C" && \
 WORKDIR /carta
 RUN chmod -R a+rwx /carta
 
-# Port 5000 matches the CANFAR Skaha "contributed session" contract, same as
-# webterm / vscode / marimo. The upstream CARTA default is 3002; we override
-# with --port 5000 in CMD so frontend WebSocket discovery (which uses
-# window.location.host) picks up the right port automatically.
-EXPOSE 5000
+# Port 3002 is the CARTA upstream default. Skaha's "carta" session type
+# launcher re-specifies --port at runtime per session (observed in-platform
+# as --port=6901 with --http_url_prefix=/session/carta/<id>), so the EXPOSE
+# value is declarative only -- it matches the upstream reference image
+# (opencadc/science-containers/Dockerfiles/carta) and documents the port
+# `docker run cadc/carta` would listen on in the absence of Skaha overrides.
+EXPOSE 3002
 
 ENV HOME=/carta
 ENV CARTA_DOCKER_DEPLOYMENT=1
@@ -96,12 +106,12 @@ LABEL org.opencontainers.image.description="CARTA: Cube Analysis and Rendering T
 LABEL org.opencontainers.image.source="https://github.com/opencadc/canfar-containers"
 LABEL org.opencontainers.image.licenses="GPL-3.0-or-later"
 
-# --debug_no_auth disables CARTA's own per-session token check. This is safe
-# and necessary in the Skaha contributed-session model: Skaha already gates
-# access to the pod via its own auth (only the logged-in, authorized user
-# can reach the ingress at all), and Skaha's proxy does NOT forward CARTA's
-# auto-generated token to the browser. Without this flag every WebSocket
-# connection fails with "Incorrect or missing auth token supplied" and the
-# session appears disconnected. Matches the behavior of the sibling webterm
-# / vscode / marimo images, which likewise delegate auth to Skaha.
-CMD ["carta", "--no_browser", "--debug_no_auth", "--port", "5000"]
+# Bare CMD matching the upstream reference. Under Skaha's "carta" session
+# type this is overridden by the platform launcher, which supplies its own
+# flags (--port, --http_url_prefix, --top_level_folder, --debug_no_auth,
+# --idle_timeout, --enable_scripting, and the starting folder positional).
+# Do NOT add --port, --debug_no_auth, or a starting folder here: duplicates
+# and drift against Skaha's contract have caused Bad Gateway / routing
+# failures in the past, and the correct values are platform-side config,
+# not image-side.
+CMD ["carta", "--no_browser"]
