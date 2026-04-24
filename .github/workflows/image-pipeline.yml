@@ -7,8 +7,9 @@
 # Release cadence (see doc/RELEASE-CADENCE.md for the full policy):
 #   Day 1 06:00 UTC - Python runtime images (3.10 - 3.14)
 #   Day 2 06:00 UTC - Terminal (depends on python:3.12)
-#   Day 3 06:00 UTC - Interactive stack (webterm, vscode, marimo, carta)
-#                     On success, a release/<YY.MM> git tag is created.
+#   Day 3 06:00 UTC - Interactive stack (webterm, vscode, marimo, carta,
+#                     carta-psrecord). On success, a release/<YY.MM> git
+#                     tag is created.
 #   Day 4           - Buffer / freeze, no publishes
 #   Days 5 - 27     - Merge window: Renovate opens PRs, humans merge freely.
 #                     PRs lint + build but do NOT push.
@@ -40,7 +41,8 @@ on:
     - cron: '0 6 1 * *'
     # Day 2: Terminal base image
     - cron: '0 6 2 * *'
-    # Day 3: Interactive stack (webterm, vscode, marimo, carta) + release tag
+    # Day 3: Interactive stack (webterm, vscode, marimo, carta,
+    # carta-psrecord) + release tag
     - cron: '0 6 3 * *'
   # On push to main, only rebuild when relevant files change
   push:
@@ -92,6 +94,7 @@ jobs:
       vscode: ${{ steps.filter.outputs.vscode }}
       marimo: ${{ steps.filter.outputs.marimo }}
       carta: ${{ steps.filter.outputs.carta }}
+      carta_psrecord: ${{ steps.filter.outputs.carta_psrecord }}
       bake_targets: ${{ steps.targets.outputs.bake_targets }}
       phase: ${{ steps.phase.outputs.phase }}
     steps:
@@ -129,7 +132,7 @@ jobs:
 
           if ! git rev-parse --verify "refs/tags/$LAST_TAG" >/dev/null 2>&1; then
             echo "Tag $LAST_TAG not found; falling back to full rebuild."
-            for t in python terminal webterm vscode marimo carta; do
+            for t in python terminal webterm vscode marimo carta carta_psrecord; do
               echo "${t}=true" >> $GITHUB_OUTPUT
             done
             exit 0
@@ -167,13 +170,18 @@ jobs:
             fi
           done
 
-          # CARTA is a leaf: no cascade from terminal or python (different
-          # distro base -- Ubuntu vs. Debian). Rebuild iff its own directory
-          # or docker-bake.hcl changed.
-          if changed dockerfiles/carta/ docker-bake.hcl; then
+          # CARTA subsystem (carta + carta-psrecord) is a standalone leaf:
+          # no cascade from terminal or python (different distro base --
+          # Ubuntu vs. Debian). The two images share the same upstream
+          # CARTA version pin, so a change to either Dockerfile (or to
+          # docker-bake.hcl) rebuilds both -- this keeps their CARTA_TAGs
+          # in lockstep even when Renovate only edits one of the two files.
+          if changed dockerfiles/carta/ dockerfiles/carta-psrecord/ docker-bake.hcl; then
             echo "carta=true" >> $GITHUB_OUTPUT
+            echo "carta_psrecord=true" >> $GITHUB_OUTPUT
           else
             echo "carta=false" >> $GITHUB_OUTPUT
+            echo "carta_psrecord=false" >> $GITHUB_OUTPUT
           fi
 
       # Force a rebuild of images that haven't been republished in a while,
@@ -237,6 +245,8 @@ jobs:
               - 'dockerfiles/marimo/**'
             carta:
               - 'dockerfiles/carta/**'
+            carta_psrecord:
+              - 'dockerfiles/carta-psrecord/**'
             bake-config:
               - 'docker-bake.hcl'
 
@@ -257,7 +267,7 @@ jobs:
               # Release anchor older than the freshness threshold; rebuild
               # every image in this phase regardless of file diff. The phase
               # gate below still restricts which subset actually builds today.
-              P=true; T=true; W=true; V=true; M=true; C=true
+              P=true; T=true; W=true; V=true; M=true; C=true; CP=true
             else
               P="${{ steps.diff.outputs.python }}"
               T="${{ steps.diff.outputs.terminal }}"
@@ -265,61 +275,78 @@ jobs:
               V="${{ steps.diff.outputs.vscode }}"
               M="${{ steps.diff.outputs.marimo }}"
               C="${{ steps.diff.outputs.carta }}"
+              CP="${{ steps.diff.outputs.carta_psrecord }}"
             fi
             echo "Scheduled run, phase=$PHASE, forced_by_age=$FORCED"
             case "$PHASE" in
               python)
-                echo "python=$P"        >> $GITHUB_OUTPUT
-                echo "terminal=false"   >> $GITHUB_OUTPUT
-                echo "webterm=false"    >> $GITHUB_OUTPUT
-                echo "vscode=false"     >> $GITHUB_OUTPUT
-                echo "marimo=false"     >> $GITHUB_OUTPUT
-                echo "carta=false"      >> $GITHUB_OUTPUT
+                echo "python=$P"             >> $GITHUB_OUTPUT
+                echo "terminal=false"        >> $GITHUB_OUTPUT
+                echo "webterm=false"         >> $GITHUB_OUTPUT
+                echo "vscode=false"          >> $GITHUB_OUTPUT
+                echo "marimo=false"          >> $GITHUB_OUTPUT
+                echo "carta=false"           >> $GITHUB_OUTPUT
+                echo "carta_psrecord=false"  >> $GITHUB_OUTPUT
                 ;;
               terminal)
-                echo "python=false"     >> $GITHUB_OUTPUT
-                echo "terminal=$T"      >> $GITHUB_OUTPUT
-                echo "webterm=false"    >> $GITHUB_OUTPUT
-                echo "vscode=false"     >> $GITHUB_OUTPUT
-                echo "marimo=false"     >> $GITHUB_OUTPUT
-                echo "carta=false"      >> $GITHUB_OUTPUT
+                echo "python=false"          >> $GITHUB_OUTPUT
+                echo "terminal=$T"           >> $GITHUB_OUTPUT
+                echo "webterm=false"         >> $GITHUB_OUTPUT
+                echo "vscode=false"          >> $GITHUB_OUTPUT
+                echo "marimo=false"          >> $GITHUB_OUTPUT
+                echo "carta=false"           >> $GITHUB_OUTPUT
+                echo "carta_psrecord=false"  >> $GITHUB_OUTPUT
                 ;;
               interactive)
-                echo "python=false"     >> $GITHUB_OUTPUT
-                echo "terminal=false"   >> $GITHUB_OUTPUT
-                echo "webterm=$W"       >> $GITHUB_OUTPUT
-                echo "vscode=$V"        >> $GITHUB_OUTPUT
-                echo "marimo=$M"        >> $GITHUB_OUTPUT
-                echo "carta=$C"         >> $GITHUB_OUTPUT
+                echo "python=false"          >> $GITHUB_OUTPUT
+                echo "terminal=false"        >> $GITHUB_OUTPUT
+                echo "webterm=$W"            >> $GITHUB_OUTPUT
+                echo "vscode=$V"             >> $GITHUB_OUTPUT
+                echo "marimo=$M"             >> $GITHUB_OUTPUT
+                echo "carta=$C"              >> $GITHUB_OUTPUT
+                echo "carta_psrecord=$CP"    >> $GITHUB_OUTPUT
                 ;;
               *)
                 echo "Unknown phase '$PHASE'; skipping all builds." >&2
-                echo "python=false"     >> $GITHUB_OUTPUT
-                echo "terminal=false"   >> $GITHUB_OUTPUT
-                echo "webterm=false"    >> $GITHUB_OUTPUT
-                echo "vscode=false"     >> $GITHUB_OUTPUT
-                echo "marimo=false"     >> $GITHUB_OUTPUT
-                echo "carta=false"      >> $GITHUB_OUTPUT
+                echo "python=false"          >> $GITHUB_OUTPUT
+                echo "terminal=false"        >> $GITHUB_OUTPUT
+                echo "webterm=false"         >> $GITHUB_OUTPUT
+                echo "vscode=false"          >> $GITHUB_OUTPUT
+                echo "marimo=false"          >> $GITHUB_OUTPUT
+                echo "carta=false"           >> $GITHUB_OUTPUT
+                echo "carta_psrecord=false"  >> $GITHUB_OUTPUT
                 ;;
             esac
           elif [[ "$EVENT" == "workflow_dispatch" ]]; then
             # Manual: build whatever the release-tag diff says changed,
             # across all phases. Useful for out-of-band hotfix runs.
-            echo "python=${{ steps.diff.outputs.python }}"     >> $GITHUB_OUTPUT
-            echo "terminal=${{ steps.diff.outputs.terminal }}" >> $GITHUB_OUTPUT
-            echo "webterm=${{ steps.diff.outputs.webterm }}"   >> $GITHUB_OUTPUT
-            echo "vscode=${{ steps.diff.outputs.vscode }}"     >> $GITHUB_OUTPUT
-            echo "marimo=${{ steps.diff.outputs.marimo }}"     >> $GITHUB_OUTPUT
-            echo "carta=${{ steps.diff.outputs.carta }}"       >> $GITHUB_OUTPUT
+            echo "python=${{ steps.diff.outputs.python }}"                 >> $GITHUB_OUTPUT
+            echo "terminal=${{ steps.diff.outputs.terminal }}"             >> $GITHUB_OUTPUT
+            echo "webterm=${{ steps.diff.outputs.webterm }}"               >> $GITHUB_OUTPUT
+            echo "vscode=${{ steps.diff.outputs.vscode }}"                 >> $GITHUB_OUTPUT
+            echo "marimo=${{ steps.diff.outputs.marimo }}"                 >> $GITHUB_OUTPUT
+            echo "carta=${{ steps.diff.outputs.carta }}"                   >> $GITHUB_OUTPUT
+            echo "carta_psrecord=${{ steps.diff.outputs.carta_psrecord }}" >> $GITHUB_OUTPUT
           else
             # push / pull_request: path-filter cascade.
-            # CARTA is a leaf (standalone Ubuntu base) so it does NOT cascade
-            # from terminal / python / bake-config -- only its own dir counts.
+            # CARTA subsystem (carta + carta-psrecord) is a standalone leaf
+            # (Ubuntu base) so it does NOT cascade from terminal / python.
+            # The two CARTA images share an upstream version pin, so a
+            # change to either dir -- or to bake-config -- rebuilds both,
+            # matching the coupling in the scheduled-diff step above.
             echo "python=${{ steps.changes.outputs.python }}" >> $GITHUB_OUTPUT
-            echo "carta=${{ steps.changes.outputs.carta }}"   >> $GITHUB_OUTPUT
+            BAKE_CONFIG="${{ steps.changes.outputs.bake-config }}"
+            CARTA_CHG="${{ steps.changes.outputs.carta }}"
+            CARTA_PS_CHG="${{ steps.changes.outputs.carta_psrecord }}"
+            if [[ "$CARTA_CHG" == "true" || "$CARTA_PS_CHG" == "true" || "$BAKE_CONFIG" == "true" ]]; then
+              echo "carta=true"          >> $GITHUB_OUTPUT
+              echo "carta_psrecord=true" >> $GITHUB_OUTPUT
+            else
+              echo "carta=false"          >> $GITHUB_OUTPUT
+              echo "carta_psrecord=false" >> $GITHUB_OUTPUT
+            fi
             TERMINAL="${{ steps.changes.outputs.terminal }}"
             PYTHON_BASE="${{ steps.changes.outputs.python-terminal-base }}"
-            BAKE_CONFIG="${{ steps.changes.outputs.bake-config }}"
             if [[ "$TERMINAL" == "true" || "$PYTHON_BASE" == "true" || "$BAKE_CONFIG" == "true" ]]; then
               echo "terminal=true" >> $GITHUB_OUTPUT
               echo "webterm=true"  >> $GITHUB_OUTPUT
@@ -343,11 +370,12 @@ jobs:
           VSCODE="${{ steps.filter.outputs.vscode }}"
           MARIMO="${{ steps.filter.outputs.marimo }}"
           CARTA="${{ steps.filter.outputs.carta }}"
+          CARTA_PS="${{ steps.filter.outputs.carta_psrecord }}"
           TERMINAL="${{ steps.filter.outputs.terminal }}"
           # webterm / vscode / marimo all inherit from terminal via bake's
           # `contexts` substitution -- terminal must be in the target list
-          # whenever any of them is selected. CARTA is standalone; it does
-          # NOT force a terminal rebuild.
+          # whenever any of them is selected. CARTA and carta-psrecord are
+          # standalone; they do NOT force a terminal rebuild.
           if [[ "$WEBTERM" == "true" || "$VSCODE" == "true" || "$MARIMO" == "true" ]]; then
             TERMINAL="true"
           fi
@@ -366,6 +394,9 @@ jobs:
           fi
           if [[ "$CARTA" == "true" ]]; then
             TARGETS="${TARGETS:+$TARGETS$'\n'}carta"
+          fi
+          if [[ "$CARTA_PS" == "true" ]]; then
+            TARGETS="${TARGETS:+$TARGETS$'\n'}carta-psrecord"
           fi
           echo "bake_targets<<EOF" >> $GITHUB_OUTPUT
           echo "$TARGETS" >> $GITHUB_OUTPUT
@@ -418,12 +449,14 @@ jobs:
           cache-to: type=gha,mode=max
 
   # --- Job: Interactive Stack (Bake Build) ---
-  # Builds terminal / webterm / vscode / marimo / carta using Docker Bake.
-  # The webterm / vscode / marimo images cascade from terminal via bake's
-  # `contexts` substitution. CARTA is a standalone leaf target (Ubuntu-based,
-  # no cascade from terminal). On day-2 scheduled builds this typically runs
-  # with just `terminal`; on day-3 it runs with the selected day-3 images
-  # (webterm / vscode / marimo / carta, plus terminal auto-added for
+  # Builds terminal / webterm / vscode / marimo / carta / carta-psrecord
+  # using Docker Bake. The webterm / vscode / marimo images cascade from
+  # terminal via bake's `contexts` substitution. CARTA and carta-psrecord
+  # are standalone leaf targets (Ubuntu-based, no cascade from terminal).
+  # The two CARTA images share an upstream-version pin and always rebuild
+  # together. On day-2 scheduled builds this typically runs with just
+  # `terminal`; on day-3 it runs with the selected day-3 images (webterm /
+  # vscode / marimo / carta / carta-psrecord, plus terminal auto-added for
   # substitution when any of webterm/vscode/marimo is selected).
   interactive-stack:
     name: Interactive Stack
@@ -443,11 +476,14 @@ jobs:
           password: ${{ secrets.CANFAR_REGISTRY_PASSWORD }}
       - name: Show targets to build
         run: 'echo "Building targets: ${{ needs.detect-changes.outputs.bake_targets }}"'
-      # Derive the CARTA tag from the Dockerfile's CARTA_VERSION arg so it
+      # Derive the CARTA tag from carta's Dockerfile CARTA_VERSION arg so it
       # tracks upstream CARTA releases rather than the monthly RELEASE_TAG.
       # Strips the "~noble1" PPA-rebuild suffix: "5.1.0~noble1" -> "5.1.0".
-      # Falls back to a safe placeholder if the Dockerfile is absent or the
-      # arg can't be parsed; bake will still build, just with tag "unknown".
+      # Shared by the `carta` and `carta-psrecord` bake targets -- they
+      # always track the same upstream CARTA version, so the carta
+      # Dockerfile is the single source of truth. Falls back to a safe
+      # placeholder if the Dockerfile is absent or the arg can't be parsed;
+      # bake will still build, just with tag "unknown".
       - name: Derive CARTA tag
         id: carta
         run: |

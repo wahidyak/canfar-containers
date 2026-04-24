@@ -24,7 +24,8 @@ canfar-containers/
     ├── webterm/        # Web-based terminal (ttyd + Starship + AI CLIs)
     ├── openvscode/     # OpenVSCode Server (browser IDE) + Cursor agent
     ├── marimo/         # Marimo reactive notebooks
-    └── carta/          # CARTA: Cube Analysis and Rendering Tool for Astronomy
+    ├── carta/          # CARTA: Cube Analysis and Rendering Tool for Astronomy
+    └── carta-psrecord/ # Diagnostic sibling of carta: same binary, wrapped in psrecord
 ```
 
 ## Architecture
@@ -66,8 +67,16 @@ The images follow a modular layered model. All images are published to `images.c
    - **Inherits**: `ubuntu:24.04` (digest-pinned, tracked by Renovate)
    - **Upstream**: CARTA is distributed exclusively via the `cartavis-team` PPA for Ubuntu. No Debian or RHEL build exists, so this image does **not** share the Debian-based `cadc/terminal` base and is a standalone leaf in the build graph.
    - **Web UI**: CARTA launched by Skaha's first-class `carta` session type. The image exposes CARTA's upstream default port 3002 and ships a bare `CMD ["carta", "--no_browser"]`; Skaha's per-session launcher overrides the `CMD` and supplies runtime flags itself (`--port`, `--http_url_prefix`, `--top_level_folder`, `--debug_no_auth`, `--idle_timeout`, `--enable_scripting`, and the starting folder), so those concerns are deliberately **not** baked into the image.
-   - **Pinning**: the apt version string of the `carta` package is tracked via Renovate's `deb` datasource pointed at the PPA's Packages index — this catches both upstream releases (e.g. `5.1.0 → 5.2.0`) and PPA rebuilds with the same upstream version (e.g. `~noble1 → ~noble2`). The PPA signing key fingerprint is manually pinned (security-sensitive; deliberately not Renovate-tracked).
+   - **Pinning**: the apt version string of the `carta` package is tracked via Renovate's `deb` datasource pointed at the PPA's Packages index — this catches both upstream releases (e.g. `5.1.0 → 5.2.0`) and PPA rebuilds with the same upstream version (e.g. `~noble1 → ~noble2`). The PPA is installed via `add-apt-repository` (trust rooted in Launchpad's TLS), matching the upstream reference image.
    - **Tagging**: `cadc/carta:<upstream version>` (e.g. `cadc/carta:5.1.0`), **not** the `YY.MM` cadence of the rest of the interactive stack. The tag tracks what astronomers actually install; CI derives it from the Dockerfile's `CARTA_VERSION` arg by stripping the `~noble1` suffix.
+
+7. **CARTA-psrecord image (`carta-psrecord`)**
+   - **Inherits**: `ubuntu:24.04` (digest-pinned), installs the same `carta` package from the same PPA as `cadc/carta`.
+   - **Purpose**: **diagnostic sibling** of `cadc/carta`, not a replacement. The image wraps `carta` under [`psrecord`](https://github.com/astrofrog/psrecord) so each session emits a CPU %, RSS, I/O, and child-process timeline of the CARTA backend under `$HOME/.carta_logs/<timestamp>_carta-backend.{log,png}`. Use when a session is slow / OOMing / thrashing disk, then switch the Skaha `carta` session type back to plain `cadc/carta` once the investigation is done.
+   - **Runtime shape**: because `psrecord` wraps `carta`, `carta` is no longer PID 1 — Skaha's `CMD` override lands on the image's `/carta/start.sh` wrapper, which reads the Skaha env contract (`SKAHA_TOP_LEVEL_DIR`, `SKAHA_PROJECTS_DIR`, `SKAHA_SESSION_URL_PATH`) and re-emits the flags Skaha would otherwise pass directly (`--top_level_folder`, `--port`, `--http_url_prefix`, `--debug_no_auth`, `--idle_timeout`, `--enable_scripting`, starting folder). This is inherent to the "wrap with profiler" pattern and means this image has a tight coupling to Skaha's env-var contract that plain `cadc/carta` does not.
+   - **Pinning**: shares the CARTA `deb` pin with `cadc/carta` (same `# renovate:` annotation), so a CARTA bump opens a single PR covering both Dockerfiles. `psrecord` and `matplotlib` are pinned via Renovate's `pypi` datasource.
+   - **Optional duration cap**: set `PSRECORD_DURATION_SECONDS` (build-arg or runtime env, positive integer) to make `psrecord` — and CARTA alongside it — stop after that many seconds. Leave empty to sample until CARTA exits naturally.
+   - **Tagging**: `cadc/carta-psrecord:<upstream version>` (e.g. `cadc/carta-psrecord:5.1.0`), tracking the same upstream CARTA version as `cadc/carta`. Both images retag together.
 
 ## Build & Deployment
 
@@ -75,19 +84,19 @@ The entire image stack is automated via GitHub Actions (`.github/workflows/image
 
 1. **Python layer**: builds versions 3.10 – 3.14 in a parallel matrix via `docker/build-push-action`.
 2. **Terminal layer**: built on top of `cadc/python:3.12`.
-3. **Interactive stack** (webterm, vscode, marimo, carta): webterm/vscode/marimo each inherit from `terminal` and are built together with it via `docker buildx bake` (see `docker-bake.hcl`). Bake's `contexts` feature wires those downstream images to the locally-built terminal, so no intermediate tag needs to be pushed between builds. CARTA is also a bake target but is **standalone** — it builds from `ubuntu:24.04` and does not depend on `terminal`.
+3. **Interactive stack** (webterm, vscode, marimo, carta, carta-psrecord): webterm/vscode/marimo each inherit from `terminal` and are built together with it via `docker buildx bake` (see `docker-bake.hcl`). Bake's `contexts` feature wires those downstream images to the locally-built terminal, so no intermediate tag needs to be pushed between builds. CARTA and carta-psrecord are also bake targets but are **standalone** — they build from `ubuntu:24.04` and do not depend on `terminal`. The two CARTA images share the upstream CARTA version pin and always rebuild together.
 
 **Release tagging**
 
 - The Debian-based interactive images (`terminal`, `webterm`, `vscode`, `marimo`) are tagged with the current month in `YY.MM` format (e.g., `26.02`), generated fresh on each build.
-- `cadc/carta` is tagged with the **upstream CARTA version** (e.g. `cadc/carta:5.1.0`), deliberately decoupled from the `YY.MM` cadence so the tag tracks what astronomers actually install. The tag is derived in CI from the Dockerfile's `CARTA_VERSION` arg (stripping the `~noble1` PPA-rebuild suffix).
+- `cadc/carta` and `cadc/carta-psrecord` are both tagged with the **upstream CARTA version** (e.g. `cadc/carta:5.1.0`, `cadc/carta-psrecord:5.1.0`), deliberately decoupled from the `YY.MM` cadence so the tag tracks what astronomers actually install. The tag is derived in CI from `dockerfiles/carta/Dockerfile`'s `CARTA_VERSION` arg (stripping the `~noble1` PPA-rebuild suffix) and shared between both targets.
 - Python images are tagged by Python version only (e.g., `python:3.12`) and are overwritten in place on each rebuild.
 
 **Triggers**
 
 The pipeline runs on four events:
 
-- **Scheduled (tiered release window)**: three crons on the 1st, 2nd, and 3rd of every month at 06:00 UTC. Day 1 publishes the Python matrix, day 2 the terminal base, day 3 the interactive stack (webterm, vscode, marimo, carta). On each day, an image is only rebuilt & republished if its Dockerfile (or an upstream it depends on) changed since the previous month's `release/YY.MM` git tag, **or** if that release tag is more than 45 days old — the latter forces a full rebuild so apt security patches eventually propagate even when no Renovate PR has triggered a file change. After a successful day-3 run, CI pushes a new `release/YY.MM` tag that anchors next month's diff.
+- **Scheduled (tiered release window)**: three crons on the 1st, 2nd, and 3rd of every month at 06:00 UTC. Day 1 publishes the Python matrix, day 2 the terminal base, day 3 the interactive stack (webterm, vscode, marimo, carta, carta-psrecord). On each day, an image is only rebuilt & republished if its Dockerfile (or an upstream it depends on) changed since the previous month's `release/YY.MM` git tag, **or** if that release tag is more than 45 days old — the latter forces a full rebuild so apt security patches eventually propagate even when no Renovate PR has triggered a file change. After a successful day-3 run, CI pushes a new `release/YY.MM` tag that anchors next month's diff.
 - **Push to `main`**: selective rebuild based on which files changed, with push to the registry. The dependency chain is respected — changes to `dockerfiles/python/3.12/` or `dockerfiles/terminal/` cascade into all downstream images. No phase gate applies on push.
 - **Pull requests**: lint runs, and affected images are built (with push disabled) so broken changes are caught before merge.
 - **Manual (`workflow_dispatch`)**: escape hatch via GitHub's "Actions" tab. Uses the same release-tag diff as the scheduled runs but ignores the phase gate, so it rebuilds every changed image in one shot. Does **not** push a new `release/YY.MM` tag.
@@ -132,13 +141,16 @@ If entries come back with an `origversion` matching the Debian package-version f
 The interactive stack is driven by Docker Bake, which can be invoked directly:
 
 ```
-# Build all interactive images (terminal, webterm, vscode, marimo) with tag "local"
+# Build all interactive images (terminal, webterm, vscode, marimo, carta, carta-psrecord) with tag "local"
 docker buildx bake
 
 # Build a single target
 docker buildx bake terminal
 
-# Override the release tag
+# Build just the CARTA subsystem
+docker buildx bake carta carta-psrecord
+
+# Override the release tag (applies to the Debian-based stack; CARTA uses CARTA_TAG instead)
 RELEASE_TAG=26.04 docker buildx bake
 ```
 
