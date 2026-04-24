@@ -36,13 +36,32 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # renovate: datasource=deb depName=carta registryUrl=https://ppa.launchpadcontent.net/cartavis-team/carta/ubuntu?suite=noble&components=main&binaryArch=amd64 versioning=deb
 ARG CARTA_VERSION=5.1.0~noble1
 
-# Install CARTA + Python/pip (psrecord is a pip package; no Debian package
-# exists). python3-pip is kept in the final image because psrecord imports
-# psutil and matplotlib at runtime.
+# ca-certificates is pinned via Renovate's repology datasource (Ubuntu 24.04)
+# because it ships the TLS trust roots used by add-apt-repository's HTTPS
+# fetch of the cartavis-team PPA -- security-sensitive, worth reproducible.
+# Kept in sync with cadc/carta's pin.
+# renovate: datasource=repology depName=ubuntu_24_04/ca-certificates versioning=deb
+ARG CA_CERTIFICATES_VERSION=20240203
+#
+# software-properties-common and python3-pip are deliberately unpinned:
+#   - software-properties-common: build-time-only (purged in this same
+#     RUN); Repology has no ubuntu_24_04 entry for it, so the repology
+#     datasource would return no-result on every Renovate run.
+#   - python3-pip: the apt-level pip is an installer-only dependency; the
+#     *installed* package versions (psrecord, matplotlib) are what
+#     matters and both are PyPI-pinned below. Repology tracks the
+#     upstream PyPI pip project, not the Ubuntu python3-pip binary, so
+#     pinning it via repology is not possible with our mechanism.
+# Rationale mirrors the philosophy documented in README.md (the pip/pixi
+# carve-out in the "Pinning philosophy" section).
+#
+# python3-pip stays in the final image because psrecord imports psutil
+# and matplotlib at runtime; removing pip would also purge those libs'
+# metadata.
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
+        "ca-certificates=${CA_CERTIFICATES_VERSION}" \
         software-properties-common \
         python3-pip && \
     add-apt-repository -y ppa:cartavis-team/carta && \

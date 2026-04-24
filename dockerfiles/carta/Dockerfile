@@ -31,10 +31,23 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # renovate: datasource=deb depName=carta registryUrl=https://ppa.launchpadcontent.net/cartavis-team/carta/ubuntu?suite=noble&components=main&binaryArch=amd64 versioning=deb
 ARG CARTA_VERSION=5.1.0~noble1
 
+# ca-certificates is pinned via Renovate's repology datasource (Ubuntu 24.04)
+# because it ships the TLS trust roots used by add-apt-repository's HTTPS
+# fetch of the cartavis-team PPA -- security-sensitive, worth reproducible.
+# renovate: datasource=repology depName=ubuntu_24_04/ca-certificates versioning=deb
+ARG CA_CERTIFICATES_VERSION=20240203
+#
+# software-properties-common is unpinned: it's a build-time-only dependency
+# (purged in the same RUN) and Repology does not expose it as its own
+# project for Ubuntu 24.04, so the repology datasource would return
+# no-result on every Renovate run. Pinning via the deb datasource against
+# the Noble Packages index is possible but low-value for a transient tool
+# that never ships in the final image.
+
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
+        "ca-certificates=${CA_CERTIFICATES_VERSION}" \
         software-properties-common && \
     add-apt-repository -y ppa:cartavis-team/carta && \
     apt-get update && \
