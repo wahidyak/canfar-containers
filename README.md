@@ -25,7 +25,8 @@ canfar-containers/
     ├── openvscode/     # OpenVSCode Server (browser IDE) + Cursor agent
     ├── marimo/         # Marimo reactive notebooks
     ├── carta/          # CARTA: Cube Analysis and Rendering Tool for Astronomy
-    └── carta-psrecord/ # Diagnostic sibling of carta: same binary, wrapped in psrecord
+    ├── carta-psrecord/ # Diagnostic sibling of carta: same binary, wrapped in psrecord
+    └── firefly/        # IPAC Firefly + CADC SSO TokenRelay adapter (Tomcat service)
 ```
 
 ## Architecture
@@ -78,25 +79,37 @@ The images follow a modular layered model. All images are published to `images.c
    - **Optional duration cap**: set `PSRECORD_DURATION_SECONDS` (build-arg or runtime env, positive integer) to make `psrecord` — and CARTA alongside it — stop after that many seconds. Leave empty to sample until CARTA exits naturally.
    - **Tagging**: `cadc/carta-psrecord:<upstream version>` (e.g. `cadc/carta-psrecord:5.1.0`), tracking the same upstream CARTA version as `cadc/carta`. Both images retag together.
 
+8. **Firefly image (`firefly`)**
+   - **Inherits**: `ipac/firefly:<FIREFLY_VERSION>` (digest-pinned, tracked by Renovate's `docker` datasource). Two-stage build: a `gradle:jdk21-alpine` builder (also digest-pinned and Renovate-tracked) compiles a small Java SSO plugin that is then layered onto the upstream Firefly image.
+   - **Upstream**: [IPAC Firefly](https://github.com/Caltech-IPAC/firefly) is a server-side Tomcat web app for astronomical image / table / catalog visualisation. Unlike the per-user CARTA / VS Code / marimo images, Firefly runs as a long-lived multi-user Tomcat service inside the cluster (one pod, Skaha proxies users to it) and is launched by Skaha as a first-class `firefly` session type.
+   - **What we add on top of upstream**: the vendored `cadc-sso/` Gradle multi-project (sourced verbatim from [`opencadc/science-containers`](https://github.com/opencadc/science-containers/tree/main/science-containers/Dockerfiles/firefly/cadc-sso), Java 21) builds a `cadc-sso-lib-*.jar` that implements Firefly's `sso.framework.adapter` extension point. The `org.opencadc.security.sso.TokenRelay` class reads the `CADC_SSO` cookie from inbound requests and converts it into a `Bearer <token>` header for Firefly's outbound calls to CADC services (YouCAT, VOSpace, etc.) so users see authenticated data. The plugin is dropped into Tomcat's `webapps-ref/firefly/WEB-INF/lib/` and activated at runtime by setting `PROPS_sso__framework__adapter=org.opencadc.security.sso.TokenRelay` in the deployment manifest.
+   - **Pinning**: three coordinated pins, all Renovate-tracked:
+     - `FIREFLY_VERSION` (final-stage `ipac/firefly` tag, e.g. `2025.5`) and `GRADLE_VERSION` (builder image tag) via the `docker` datasource on the Dockerfile `ARG` lines.
+     - The Caltech-IPAC/firefly **source clone** that runs *inside* the gradle build (to obtain `firefly.jar` as a compile-time dependency for `cadc-sso-lib`) is tracked via a second custom regex manager in `renovate.json` that targets `def fireflyTag = '<value>'` in `cadc-sso/lib/build.gradle` (datasource: `github-tags depName=Caltech-IPAC/firefly`). Renovate opens a separate PR when Caltech-IPAC publishes a new `release-*` tag.
+     - Renovate's built-in `gradle` manager automatically tracks the Java dependency tree inside `cadc-sso/lib/build.gradle` and `cadc-sso/gradle/libs.versions.toml` (log4j-{api,core}, junit-jupiter, mockito, javax.servlet-api, javax.websocket-api, commons-math3, guava, palantir java-format, spotless, jacoco) -- no annotations required.
+   - **What we deliberately do NOT ship**: the upstream reference repo includes `manifest.yaml` (Kubernetes Deployment + Service + Traefik IngressRoute) and `docker-compose.yaml` for local dev. Both are deploy-time artefacts owned by whoever operates Skaha and are out of scope for this image-publishing repo.
+   - **Tagging**: `cadc/firefly:<upstream ipac/firefly version>` (e.g. `cadc/firefly:2025.5`), **not** the `YY.MM` cadence (mirrors the CARTA pattern). CI derives the tag from the Dockerfile's `FIREFLY_VERSION` arg.
+
 ## Build & Deployment
 
 The entire image stack is automated via GitHub Actions (`.github/workflows/image-pipeline.yml`).
 
 1. **Python layer**: builds versions 3.10 – 3.14 in a parallel matrix via `docker/build-push-action`.
 2. **Terminal layer**: built on top of `cadc/python:3.12`.
-3. **Interactive stack** (webterm, vscode, marimo, carta, carta-psrecord): webterm/vscode/marimo each inherit from `terminal` and are built together with it via `docker buildx bake` (see `docker-bake.hcl`). Bake's `contexts` feature wires those downstream images to the locally-built terminal, so no intermediate tag needs to be pushed between builds. CARTA and carta-psrecord are also bake targets but are **standalone** — they build from `ubuntu:24.04` and do not depend on `terminal`. The two CARTA images share the upstream CARTA version pin and always rebuild together.
+3. **Interactive stack** (webterm, vscode, marimo, carta, carta-psrecord, firefly): webterm/vscode/marimo each inherit from `terminal` and are built together with it via `docker buildx bake` (see `docker-bake.hcl`). Bake's `contexts` feature wires those downstream images to the locally-built terminal, so no intermediate tag needs to be pushed between builds. CARTA, carta-psrecord, and firefly are also bake targets but are **standalone** — CARTA and carta-psrecord build from `ubuntu:24.04`, firefly is a two-stage build on top of `gradle:jdk21-alpine` + `ipac/firefly`. None depend on `terminal`. The two CARTA images share the upstream CARTA version pin and always rebuild together; firefly is independent.
 
 **Release tagging**
 
 - The Debian-based interactive images (`terminal`, `webterm`, `vscode`, `marimo`) are tagged with the current month in `YY.MM` format (e.g., `26.02`), generated fresh on each build.
 - `cadc/carta` and `cadc/carta-psrecord` are both tagged with the **upstream CARTA version** (e.g. `cadc/carta:5.1.0`, `cadc/carta-psrecord:5.1.0`), deliberately decoupled from the `YY.MM` cadence so the tag tracks what astronomers actually install. The tag is derived in CI from `dockerfiles/carta/Dockerfile`'s `CARTA_VERSION` arg (stripping the `~noble1` PPA-rebuild suffix) and shared between both targets.
+- `cadc/firefly` is tagged with the **upstream `ipac/firefly` version** (e.g. `cadc/firefly:2025.5`), same pattern as CARTA. The tag is derived in CI from `dockerfiles/firefly/Dockerfile`'s `FIREFLY_VERSION` arg.
 - Python images are tagged by Python version only (e.g., `python:3.12`) and are overwritten in place on each rebuild.
 
 **Triggers**
 
 The pipeline runs on four events:
 
-- **Scheduled (tiered release window)**: three crons on the 1st, 2nd, and 3rd of every month at 06:00 UTC. Day 1 publishes the Python matrix, day 2 the terminal base, day 3 the interactive stack (webterm, vscode, marimo, carta, carta-psrecord). On each day, an image is only rebuilt & republished if its Dockerfile (or an upstream it depends on) changed since the previous month's `release/YY.MM` git tag, **or** if that release tag is more than 45 days old — the latter forces a full rebuild so apt security patches eventually propagate even when no Renovate PR has triggered a file change. After a successful day-3 run, CI pushes a new `release/YY.MM` tag that anchors next month's diff.
+- **Scheduled (tiered release window)**: three crons on the 1st, 2nd, and 3rd of every month at 06:00 UTC. Day 1 publishes the Python matrix, day 2 the terminal base, day 3 the interactive stack (webterm, vscode, marimo, carta, carta-psrecord, firefly). On each day, an image is only rebuilt & republished if its Dockerfile (or an upstream it depends on) changed since the previous month's `release/YY.MM` git tag, **or** if that release tag is more than 45 days old — the latter forces a full rebuild so apt security patches eventually propagate even when no Renovate PR has triggered a file change. After a successful day-3 run, CI pushes a new `release/YY.MM` tag that anchors next month's diff.
 - **Push to `main`**: selective rebuild based on which files changed, with push to the registry. The dependency chain is respected — changes to `dockerfiles/python/3.12/` or `dockerfiles/terminal/` cascade into all downstream images. No phase gate applies on push.
 - **Pull requests**: lint runs, and affected images are built (with push disabled) so broken changes are caught before merge.
 - **Manual (`workflow_dispatch`)**: escape hatch via GitHub's "Actions" tab. Uses the same release-tag diff as the scheduled runs but ignores the phase gate, so it rebuilds every changed image in one shot. Does **not** push a new `release/YY.MM` tag.
@@ -107,7 +120,7 @@ See [`doc/RELEASE-CADENCE.md`](doc/RELEASE-CADENCE.md) for the merge-window / re
 
 Two complementary systems keep the stack current:
 
-- **Renovate** (hosted by [Mend](https://www.mend.io/), configured in `renovate.json`) continuously scans the Dockerfiles and workflow files, and opens PRs to bump any pinned dependency. PRs are scheduled to appear during the monthly **merge window** — days 5 through 27 UTC — so they never overlap with the release window (days 1 – 3) or the pre-release soft freeze (day 28 onward). Every `ARG *_VERSION=…` declaration with a `# renovate:` annotation is tracked automatically — base-image digests, PyPI and npm packages, GitHub releases, and Debian apt packages (via the [Repology](https://repology.org/) API).
+- **Renovate** (hosted by [Mend](https://www.mend.io/), configured in `renovate.json`) continuously scans the Dockerfiles and workflow files, and opens PRs to bump any pinned dependency. PRs are scheduled to appear during the monthly **merge window** — days 5 through 27 UTC — so they never overlap with the release window (days 1 – 3) or the pre-release soft freeze (day 28 onward). Every `ARG *_VERSION=…` declaration with a `# renovate:` annotation is tracked automatically — base-image digests, PyPI and npm packages, GitHub releases, and Debian apt packages (via the [Repology](https://repology.org/) API). The Firefly subsystem additionally activates Renovate's built-in `gradle` manager (which auto-tracks the Java dependency tree in `cadc-sso/lib/build.gradle` and `cadc-sso/gradle/libs.versions.toml`) and a second custom regex manager that targets a `// renovate:`-annotated `def fireflyTag = '<value>'` line in that same `build.gradle` (datasource: `github-tags depName=Caltech-IPAC/firefly`).
 - **Hadolint** (`hadolint/hadolint-action`) lints every Dockerfile on every push and PR. Repo-wide rules are in `.hadolint.yaml`.
 
 ### What the monthly rebuild actually refreshes
@@ -141,7 +154,7 @@ If entries come back with an `origversion` matching the Debian package-version f
 The interactive stack is driven by Docker Bake, which can be invoked directly:
 
 ```
-# Build all interactive images (terminal, webterm, vscode, marimo, carta, carta-psrecord) with tag "local"
+# Build all interactive images (terminal, webterm, vscode, marimo, carta, carta-psrecord, firefly) with tag "local"
 docker buildx bake
 
 # Build a single target
@@ -150,7 +163,10 @@ docker buildx bake terminal
 # Build just the CARTA subsystem
 docker buildx bake carta carta-psrecord
 
-# Override the release tag (applies to the Debian-based stack; CARTA uses CARTA_TAG instead)
+# Build just Firefly
+docker buildx bake firefly
+
+# Override the release tag (applies to the Debian-based stack; CARTA uses CARTA_TAG, Firefly uses FIREFLY_TAG)
 RELEASE_TAG=26.04 docker buildx bake
 ```
 

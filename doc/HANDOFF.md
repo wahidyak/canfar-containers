@@ -38,13 +38,29 @@ canfar-containers/
     ├── openvscode/Dockerfile
     ├── marimo/Dockerfile
     ├── carta/Dockerfile
-    └── carta-psrecord/Dockerfile
+    ├── carta-psrecord/Dockerfile
+    └── firefly/
+        ├── Dockerfile
+        └── cadc-sso/             # vendored from opencadc/science-containers
+            ├── settings.gradle
+            ├── gradle.properties
+            ├── gradle/{libs.versions.toml, wrapper/}
+            ├── gradlew, gradlew.bat
+            └── lib/{build.gradle, src/{main,test}/java/...}
 ```
 
-Each image directory contains exactly one `Dockerfile`. There are no
-separate `entrypoint.sh` / `startup.sh` files checked in — all startup
-logic is written inline in the Dockerfile via `RUN cat >…<<EOF` heredocs.
-Search for `startup.sh` in a given Dockerfile to find the embedded script.
+Most image directories contain exactly one `Dockerfile`. The exception is
+`firefly/`, which additionally vendors a small Gradle multi-project under
+`cadc-sso/` to compile a Java SSO plugin layered onto upstream
+`ipac/firefly`. The vendored sources are copied verbatim from
+`opencadc/science-containers` and are owned upstream; we do not modify
+them except for one Renovate-tracking annotation in
+`cadc-sso/lib/build.gradle` (the `def fireflyTag = '...'` line).
+
+There are no separate `entrypoint.sh` / `startup.sh` files checked in for
+the Debian-based images — all startup logic is written inline in the
+Dockerfile via `RUN cat >…<<EOF` heredocs. Search for `startup.sh` in a
+given Dockerfile to find the embedded script.
 
 ## 2. Image stack and inheritance
 
@@ -66,6 +82,12 @@ ubuntu:24.04 (pinned @sha)      ▶ cadc/carta:<CARTA_TAG>
   + cartavis-team PPA             ▶ cadc/carta-psrecord:<CARTA_TAG>
                                   (both standalone; do NOT inherit from cadc/terminal;
                                    share CARTA_TAG -- upstream CARTA version, e.g. "5.1.0")
+
+gradle:jdk21-alpine             ┐
+  (builder, pinned @sha)        │
+                                ├▶ cadc/firefly:<FIREFLY_TAG>
+ipac/firefly:<ver> (pinned @sha)┘   (standalone; two-stage build; FIREFLY_TAG = upstream
+  (final stage)                      ipac/firefly version, e.g. "2025.5")
 ```
 
 - `cadc/python:<ver>` is tagged by Python version only (e.g.
@@ -97,6 +119,17 @@ ubuntu:24.04 (pinned @sha)      ▶ cadc/carta:<CARTA_TAG>
   `psrecord` for per-session CPU / memory / IO profiling); the two
   always track the same upstream CARTA version and retag together. The
   other images here are all Debian-based via `python:slim`.
+- `cadc/firefly` is a third standalone leaf, with a two-stage build:
+  a `gradle:jdk21-alpine` builder compiles `cadc-sso-lib-*.jar` from
+  the vendored `cadc-sso/` Gradle project, and the final stage layers
+  that jar into upstream `ipac/firefly:<FIREFLY_VERSION>`'s Tomcat
+  webapp at `/usr/local/tomcat/webapps-ref/firefly/WEB-INF/lib/`. It
+  does not inherit from `cadc/terminal` (Tomcat base, not Debian dev
+  shell) and does not depend on the CARTA pair. The `cadc-sso/` sources
+  are vendored verbatim from `opencadc/science-containers` and not
+  modified locally except for a single Renovate-tracking annotation.
+  Tagged with the upstream `ipac/firefly` version (e.g. `2025.5`),
+  same scheme as CARTA.
 
 Ports and entrypoints exposed by each interactive image:
 
@@ -108,6 +141,7 @@ Ports and entrypoints exposed by each interactive image:
 | `marimo`     | 5000   | `ENTRYPOINT ["/bin/bash", "-e", "/cadc/startup.sh"]` |
 | `carta`      | 3002   | `CMD ["carta", "--no_browser"]` (Skaha's `carta` session launcher overrides `CMD` and supplies `--port`, `--http_url_prefix`, `--top_level_folder`, `--debug_no_auth`, `--idle_timeout`, `--enable_scripting`, and the starting folder per-session) |
 | `carta-psrecord` | 3002 | `CMD ["/carta/start.sh"]` (wrapper execs `psrecord carta … --include-io --include-children --interval 1`; re-specifies Skaha's flags from `SKAHA_TOP_LEVEL_DIR` / `SKAHA_PROJECTS_DIR` / `SKAHA_SESSION_URL_PATH` because `carta` is no longer PID 1) |
+| `firefly`    | 8080   | inherited from `ipac/firefly` (Tomcat startup); environment-driven config (`PROPS_sso__framework__adapter`, `CADC_SSO_COOKIE_*`, `CADC_ALLOWED_DOMAIN`, `baseURL`, `PROPS_FIREFLY_OPTIONS`) is supplied by the Skaha-side Deployment manifest, not baked into the image |
 
 ## 3. Build orchestration
 
@@ -120,10 +154,10 @@ parallel as a matrix job in the workflow. Each version lives in its own
 versions.
 
 **b) `docker buildx bake` for the interactive stack.**
-`docker-bake.hcl` defines six targets (`terminal`, `webterm`, `vscode`,
-`marimo`, `carta`, `carta-psrecord`). For webterm / vscode / marimo the
-key mechanism is the `contexts` block, which wires each downstream
-target to the locally-built terminal:
+`docker-bake.hcl` defines seven targets (`terminal`, `webterm`, `vscode`,
+`marimo`, `carta`, `carta-psrecord`, `firefly`). For webterm / vscode /
+marimo the key mechanism is the `contexts` block, which wires each
+downstream target to the locally-built terminal:
 
 ```hcl
 target "webterm" {
@@ -159,6 +193,24 @@ that runs `carta` under `psrecord`. Both carta targets share
 Renovate bumping the shared `CARTA_VERSION` pin always updates both
 Harbor repos in lockstep.
 
+The seventh target, `firefly`, is also a standalone leaf, with a
+distinct shape from everything else in the stack: it's a two-stage
+Dockerfile where a `gradle:jdk21-alpine` builder compiles a small
+Java SSO plugin (`cadc-sso-lib-*.jar`) from the vendored
+`dockerfiles/firefly/cadc-sso/` Gradle project, and the final stage
+layers that jar onto upstream `ipac/firefly:<FIREFLY_VERSION>`. The
+gradle build step also clones `Caltech-IPAC/firefly` at a pinned tag
+(tracked by Renovate via a `// renovate:` annotation in
+`cadc-sso/lib/build.gradle`) to obtain `firefly.jar` as a compile-time
+dependency for the SSO plugin. `firefly` does not cascade with any
+other target; it tags as `cadc/firefly:<FIREFLY_TAG>` with `FIREFLY_TAG`
+derived from the Dockerfile's `FIREFLY_VERSION` arg. Build cost is
+the highest in the stack (~10–20 min wall-clock on GitHub-hosted
+runners because of the in-build Caltech-IPAC clone + jar build), but
+it only runs on day 3 when the Dockerfile, vendored Java sources, or
+Caltech-IPAC tag pin actually change, which in steady state is at
+most a few times per year.
+
 ## 4. CI/CD workflow
 
 Single workflow: [`.github/workflows/image-pipeline.yml`](../.github/workflows/image-pipeline.yml).
@@ -174,10 +226,10 @@ Single workflow: [`.github/workflows/image-pipeline.yml`](../.github/workflows/i
 
 The three `schedule` crons implement a **staggered release window**
 (day 1 → python, day 2 → terminal, day 3 → interactive stack
-including `webterm`, `vscode`, `marimo`, and the standalone `carta` /
-`carta-psrecord` pair), with a release anchor tag (`release/YY.MM`)
-pushed on day 3. On `schedule`, a **phase gate** restricts each day to
-its own subset of images.
+including `webterm`, `vscode`, `marimo`, the standalone `carta` /
+`carta-psrecord` pair, and standalone `firefly`), with a release
+anchor tag (`release/YY.MM`) pushed on day 3. On `schedule`, a
+**phase gate** restricts each day to its own subset of images.
 
 On `schedule` and `workflow_dispatch`, `detect-changes` diffs `HEAD`
 against the previous month's `release/YY.MM` git tag to decide which
@@ -225,9 +277,16 @@ The workflow defines six jobs that fan out from a short setup stage:
      `dockerfiles/carta-psrecord/` flags both. They share day 3 of the
      release window with the terminal-derived interactive stack but
      are phase-gated independently.
+   - **`firefly` is also a standalone leaf.** Rebuild trigger is
+     `dockerfiles/firefly/**` (Dockerfile + vendored `cadc-sso/` Java
+     sources + Renovate-tracked Caltech-IPAC tag pin in `build.gradle`)
+     or `docker-bake.hcl`. No cascade in either direction; not coupled
+     to the CARTA pair. Shares day 3 of the release window with the
+     other interactive-stack images, phase-gated independently.
    - If any of `webterm`/`vscode`/`marimo` is selected, `terminal` is
      force-added to the bake target list (see §3). The CARTA subsystem
-     does NOT force terminal; the two subsystems are independent.
+     and `firefly` do NOT force terminal; all three subsystems are
+     independent.
    - **Freshness override (age-based forced rebuild).** On scheduled
      runs, if the previous month's `release/<YY.MM>` tag is older than
      `FORCED_REBUILD_AGE_DAYS` (default 45), every image in today's
@@ -253,13 +312,17 @@ The workflow defines six jobs that fan out from a short setup stage:
    Before invoking bake, a "Derive CARTA tag" step greps
    `dockerfiles/carta/Dockerfile` for `ARG CARTA_VERSION=` and strips
    the `~noble1` PPA-rebuild suffix, exporting the result as
-   `CARTA_TAG` (e.g. `5.1.0~noble1 → 5.1.0`). This single tag is
-   applied to **both** `cadc/carta` and `cadc/carta-psrecord` (the
-   carta Dockerfile is the single source of truth). Then executes
-   `docker buildx bake` with the computed target list, `RELEASE_TAG`
-   (monthly, for the Debian stack) and `CARTA_TAG` (upstream version,
-   shared by both CARTA targets) both in env. On PRs, `push` is
-   `false` and the registry login is skipped.
+   `CARTA_TAG` (e.g. `5.1.0~noble1 → 5.1.0`). A second "Derive Firefly
+   tag" step does the same for `dockerfiles/firefly/Dockerfile`'s
+   `ARG FIREFLY_VERSION=` (no suffix to strip; upstream `ipac/firefly`
+   tags are clean, e.g. `2025.5`), exporting `FIREFLY_TAG`. The single
+   `CARTA_TAG` is applied to **both** `cadc/carta` and
+   `cadc/carta-psrecord` (the carta Dockerfile is the single source
+   of truth). Then executes `docker buildx bake` with the computed
+   target list, `RELEASE_TAG` (monthly, for the Debian stack),
+   `CARTA_TAG` (upstream version, shared by both CARTA targets), and
+   `FIREFLY_TAG` (upstream `ipac/firefly` version) all in env. On PRs,
+   `push` is `false` and the registry login is skipped.
 6. **`tag-release`** — runs only on the day-3 scheduled cron, and only
    if `python` and `interactive-stack` didn't fail. Creates and pushes
    a `release/YY.MM` annotated git tag on the current commit. That tag
@@ -279,7 +342,7 @@ On a successful non-PR run, the pipeline pushes:
 | Job                  | Tags pushed (assuming all targets selected)                      |
 |----------------------|------------------------------------------------------------------|
 | `python` (matrix)    | `images.canfar.net/cadc/python:{3.10, 3.11, 3.12, 3.13, 3.14}`   |
-| `interactive-stack`  | `images.canfar.net/cadc/{terminal, webterm, vscode, marimo}:<YY.MM>`, `images.canfar.net/cadc/{carta, carta-psrecord}:<CARTA_VERSION>` |
+| `interactive-stack`  | `images.canfar.net/cadc/{terminal, webterm, vscode, marimo}:<YY.MM>`, `images.canfar.net/cadc/{carta, carta-psrecord}:<CARTA_VERSION>`, `images.canfar.net/cadc/firefly:<FIREFLY_VERSION>` |
 
 Python tags are **overwritten in place** each build. Debian interactive-stack
 tags (`terminal`, `webterm`, `vscode`, `marimo`) are **per-month**, so e.g.
@@ -317,13 +380,14 @@ provisioned or managed from this repo.
     workflow will silently skip login if the names don't match; the
     subsequent push step will fail with an auth error).
   - That the service account behind those credentials has push rights
-    to the `cadc/` project for all seven image names
+    to the `cadc/` project for all eight image names
     (`python`, `terminal`, `webterm`, `vscode`, `marimo`, `carta`,
-    `carta-psrecord`). Harbor is per-project + per-repo ACL'd; a
-    newly-introduced image name may require the repo to be created and
-    permissions widened. `cadc/carta` and `cadc/carta-psrecord` are
-    both new repositories for this project and will almost certainly
-    need to be created explicitly before the first push.
+    `carta-psrecord`, `firefly`). Harbor is per-project + per-repo
+    ACL'd; a newly-introduced image name may require the repo to be
+    created and permissions widened. `cadc/carta`, `cadc/carta-psrecord`,
+    and `cadc/firefly` are all new repositories for this project and
+    will almost certainly need to be created explicitly before the
+    first push.
   - Credential rotation policy (who rotates, how often, what notifies
     GitHub Actions of the new secret value).
 
@@ -336,14 +400,29 @@ is a one-time administrative step performed via
 
 Configuration lives in [`renovate.json`](../renovate.json):
 
-- Extends `config:recommended`.
-- Runs "on the first day of the month" in UTC.
-- Defines one custom regex manager that extracts `ARG <NAME>_VERSION=…`
-  values annotated by a `# renovate: datasource=… depName=… [versioning=…]`
-  comment on the line above.
-- Forces `versioning=pep440` for all `pypi` datasource pins, so
-  PyPI-version comparisons follow PEP 440 even though the regex
-  manager defaults to semver.
+- Extends `config:recommended` (which activates Renovate's built-in
+  `dockerfile`, `docker-compose`, `gradle`, and other managers
+  automatically).
+- Schedules update PRs for days 5–27 UTC (the merge window).
+- Defines two custom regex managers:
+  1. Extracts `ARG <NAME>_VERSION=…` values in any Dockerfile when
+     annotated by a `# renovate: datasource=… depName=… [versioning=…]`
+     comment on the line above. This is the workhorse used by every
+     image's pinning.
+  2. Extracts `def <name> = '<value>'` lines in any `build.gradle`
+     when annotated by a `// renovate: datasource=… depName=…` comment
+     on the line above. Used today by `cadc-sso/lib/build.gradle` to
+     track the Caltech-IPAC/firefly tag whose `firefly.jar` is
+     consumed as a compile-time dependency for the SSO plugin.
+- Forces `versioning=pep440` for all `pypi` datasource pins and
+  `versioning=deb` for all `deb` datasource pins, so PEP-440 / Debian
+  semantics apply even though the regex managers default to semver.
+- Renovate's built-in `gradle` manager (active via `config:recommended`)
+  automatically tracks all Maven-Central dependency declarations in
+  `cadc-sso/lib/build.gradle` and `cadc-sso/gradle/libs.versions.toml`
+  (log4j-{api,core}, junit-jupiter, mockito, javax.servlet-api,
+  javax.websocket-api, commons-math3, guava, palantir-java-format,
+  spotless plugin, jacoco) without any per-line annotation needed.
 
 Once installed, Renovate's behavior on this repo is:
 
@@ -491,11 +570,11 @@ itself. Each will surface as a real failure mode if left unaddressed.
 2. **Harbor project layout and robot-account permissions.** Confirm
    the `cadc/` project exists on `images.canfar.net` and that the
     service account behind the secrets has push rights to
-    `cadc/{python, terminal, webterm, vscode, marimo, carta, carta-psrecord}`.
+    `cadc/{python, terminal, webterm, vscode, marimo, carta, carta-psrecord, firefly}`.
     Any image name that has never been pushed before may require a new
-    Harbor repo and/or updated ACL — in particular `cadc/carta` and
-    `cadc/carta-psrecord` are newly introduced by this stack and will
-    likely need the robot account's ACL extended.
+    Harbor repo and/or updated ACL — in particular `cadc/carta`,
+    `cadc/carta-psrecord`, and `cadc/firefly` are newly introduced by
+    this stack and will likely need the robot account's ACL extended.
 3. **Tag format.** The workflow publishes interactive-stack images
    with tag `YY.MM` (e.g. `26.04`). Confirm this matches the
    project's expected tagging scheme. Alternative common choices
@@ -537,6 +616,21 @@ itself. Each will surface as a real failure mode if left unaddressed.
    branch protection or by the workflow. If stricter enforcement is
    wanted, add a GitHub ruleset on `main` that blocks merges on
    those days of the month.
+10. **Firefly Skaha-side deployment manifest.** This repo publishes
+    `cadc/firefly:<FIREFLY_VERSION>` to Harbor. The Skaha-side
+    Kubernetes resources that actually run the image (Deployment,
+    Service, Traefik IngressRoute, Middleware) are **not** shipped
+    here and are owned by whoever operates the Skaha cluster. The
+    upstream reference at `opencadc/science-containers/.../firefly/manifest.yaml`
+    is a working starting point: a singleton Deployment with
+    `replicas: 1`, `runAsUser: 91` (Tomcat UID), 4Gi/1CPU request +
+    8Gi/2CPU limit, and the env vars `PROPS_sso__framework__adapter=org.opencadc.security.sso.TokenRelay`,
+    `CADC_SSO_COOKIE_NAME=CADC_SSO`, `CADC_SSO_COOKIE_DOMAIN=.canfar.net`,
+    `CADC_ALLOWED_DOMAIN=.canfar.net`, `baseURL=/session/notebook/firefly/`,
+    plus a `PROPS_FIREFLY_OPTIONS` JSON blob with TAP service
+    pre-configuration. The deployment image reference will need to be
+    pointed at `images.canfar.net/cadc/firefly:<tag>` (the upstream
+    reference points at `images.canfar.net/skaha/firefly:dev`).
 
 ---
 

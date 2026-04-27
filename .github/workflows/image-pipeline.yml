@@ -8,8 +8,8 @@
 #   Day 1 06:00 UTC - Python runtime images (3.10 - 3.14)
 #   Day 2 06:00 UTC - Terminal (depends on python:3.12)
 #   Day 3 06:00 UTC - Interactive stack (webterm, vscode, marimo, carta,
-#                     carta-psrecord). On success, a release/<YY.MM> git
-#                     tag is created.
+#                     carta-psrecord, firefly). On success, a release/<YY.MM>
+#                     git tag is created.
 #   Day 4           - Buffer / freeze, no publishes
 #   Days 5 - 27     - Merge window: Renovate opens PRs, humans merge freely.
 #                     PRs lint + build but do NOT push.
@@ -95,6 +95,7 @@ jobs:
       marimo: ${{ steps.filter.outputs.marimo }}
       carta: ${{ steps.filter.outputs.carta }}
       carta_psrecord: ${{ steps.filter.outputs.carta_psrecord }}
+      firefly: ${{ steps.filter.outputs.firefly }}
       bake_targets: ${{ steps.targets.outputs.bake_targets }}
       phase: ${{ steps.phase.outputs.phase }}
     steps:
@@ -132,7 +133,7 @@ jobs:
 
           if ! git rev-parse --verify "refs/tags/$LAST_TAG" >/dev/null 2>&1; then
             echo "Tag $LAST_TAG not found; falling back to full rebuild."
-            for t in python terminal webterm vscode marimo carta carta_psrecord; do
+            for t in python terminal webterm vscode marimo carta carta_psrecord firefly; do
               echo "${t}=true" >> $GITHUB_OUTPUT
             done
             exit 0
@@ -182,6 +183,18 @@ jobs:
           else
             echo "carta=false" >> $GITHUB_OUTPUT
             echo "carta_psrecord=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Firefly is a standalone leaf (Tomcat on top of upstream
+          # ipac/firefly), with no cascade from terminal / python. Any
+          # change under dockerfiles/firefly/ (Dockerfile, vendored
+          # cadc-sso Java sources, or build.gradle's Caltech-IPAC tag pin)
+          # rebuilds it. docker-bake.hcl changes also trigger a rebuild
+          # for symmetry with the other targets.
+          if changed dockerfiles/firefly/ docker-bake.hcl; then
+            echo "firefly=true" >> $GITHUB_OUTPUT
+          else
+            echo "firefly=false" >> $GITHUB_OUTPUT
           fi
 
       # Force a rebuild of images that haven't been republished in a while,
@@ -247,6 +260,8 @@ jobs:
               - 'dockerfiles/carta/**'
             carta_psrecord:
               - 'dockerfiles/carta-psrecord/**'
+            firefly:
+              - 'dockerfiles/firefly/**'
             bake-config:
               - 'docker-bake.hcl'
 
@@ -267,7 +282,7 @@ jobs:
               # Release anchor older than the freshness threshold; rebuild
               # every image in this phase regardless of file diff. The phase
               # gate below still restricts which subset actually builds today.
-              P=true; T=true; W=true; V=true; M=true; C=true; CP=true
+              P=true; T=true; W=true; V=true; M=true; C=true; CP=true; F=true
             else
               P="${{ steps.diff.outputs.python }}"
               T="${{ steps.diff.outputs.terminal }}"
@@ -276,6 +291,7 @@ jobs:
               M="${{ steps.diff.outputs.marimo }}"
               C="${{ steps.diff.outputs.carta }}"
               CP="${{ steps.diff.outputs.carta_psrecord }}"
+              F="${{ steps.diff.outputs.firefly }}"
             fi
             echo "Scheduled run, phase=$PHASE, forced_by_age=$FORCED"
             case "$PHASE" in
@@ -287,6 +303,7 @@ jobs:
                 echo "marimo=false"          >> $GITHUB_OUTPUT
                 echo "carta=false"           >> $GITHUB_OUTPUT
                 echo "carta_psrecord=false"  >> $GITHUB_OUTPUT
+                echo "firefly=false"         >> $GITHUB_OUTPUT
                 ;;
               terminal)
                 echo "python=false"          >> $GITHUB_OUTPUT
@@ -296,6 +313,7 @@ jobs:
                 echo "marimo=false"          >> $GITHUB_OUTPUT
                 echo "carta=false"           >> $GITHUB_OUTPUT
                 echo "carta_psrecord=false"  >> $GITHUB_OUTPUT
+                echo "firefly=false"         >> $GITHUB_OUTPUT
                 ;;
               interactive)
                 echo "python=false"          >> $GITHUB_OUTPUT
@@ -305,6 +323,7 @@ jobs:
                 echo "marimo=$M"             >> $GITHUB_OUTPUT
                 echo "carta=$C"              >> $GITHUB_OUTPUT
                 echo "carta_psrecord=$CP"    >> $GITHUB_OUTPUT
+                echo "firefly=$F"            >> $GITHUB_OUTPUT
                 ;;
               *)
                 echo "Unknown phase '$PHASE'; skipping all builds." >&2
@@ -315,6 +334,7 @@ jobs:
                 echo "marimo=false"          >> $GITHUB_OUTPUT
                 echo "carta=false"           >> $GITHUB_OUTPUT
                 echo "carta_psrecord=false"  >> $GITHUB_OUTPUT
+                echo "firefly=false"         >> $GITHUB_OUTPUT
                 ;;
             esac
           elif [[ "$EVENT" == "workflow_dispatch" ]]; then
@@ -327,6 +347,7 @@ jobs:
             echo "marimo=${{ steps.diff.outputs.marimo }}"                 >> $GITHUB_OUTPUT
             echo "carta=${{ steps.diff.outputs.carta }}"                   >> $GITHUB_OUTPUT
             echo "carta_psrecord=${{ steps.diff.outputs.carta_psrecord }}" >> $GITHUB_OUTPUT
+            echo "firefly=${{ steps.diff.outputs.firefly }}"               >> $GITHUB_OUTPUT
           else
             # push / pull_request: path-filter cascade.
             # CARTA subsystem (carta + carta-psrecord) is a standalone leaf
@@ -344,6 +365,14 @@ jobs:
             else
               echo "carta=false"          >> $GITHUB_OUTPUT
               echo "carta_psrecord=false" >> $GITHUB_OUTPUT
+            fi
+            # Firefly is a standalone leaf -- no cascade. Rebuild on its
+            # own dir or on bake-config changes.
+            FIREFLY_CHG="${{ steps.changes.outputs.firefly }}"
+            if [[ "$FIREFLY_CHG" == "true" || "$BAKE_CONFIG" == "true" ]]; then
+              echo "firefly=true"  >> $GITHUB_OUTPUT
+            else
+              echo "firefly=false" >> $GITHUB_OUTPUT
             fi
             TERMINAL="${{ steps.changes.outputs.terminal }}"
             PYTHON_BASE="${{ steps.changes.outputs.python-terminal-base }}"
@@ -371,11 +400,12 @@ jobs:
           MARIMO="${{ steps.filter.outputs.marimo }}"
           CARTA="${{ steps.filter.outputs.carta }}"
           CARTA_PS="${{ steps.filter.outputs.carta_psrecord }}"
+          FIREFLY="${{ steps.filter.outputs.firefly }}"
           TERMINAL="${{ steps.filter.outputs.terminal }}"
           # webterm / vscode / marimo all inherit from terminal via bake's
           # `contexts` substitution -- terminal must be in the target list
-          # whenever any of them is selected. CARTA and carta-psrecord are
-          # standalone; they do NOT force a terminal rebuild.
+          # whenever any of them is selected. CARTA, carta-psrecord, and
+          # firefly are standalone; they do NOT force a terminal rebuild.
           if [[ "$WEBTERM" == "true" || "$VSCODE" == "true" || "$MARIMO" == "true" ]]; then
             TERMINAL="true"
           fi
@@ -397,6 +427,9 @@ jobs:
           fi
           if [[ "$CARTA_PS" == "true" ]]; then
             TARGETS="${TARGETS:+$TARGETS$'\n'}carta-psrecord"
+          fi
+          if [[ "$FIREFLY" == "true" ]]; then
+            TARGETS="${TARGETS:+$TARGETS$'\n'}firefly"
           fi
           echo "bake_targets<<EOF" >> $GITHUB_OUTPUT
           echo "$TARGETS" >> $GITHUB_OUTPUT
@@ -449,15 +482,17 @@ jobs:
           cache-to: type=gha,mode=max
 
   # --- Job: Interactive Stack (Bake Build) ---
-  # Builds terminal / webterm / vscode / marimo / carta / carta-psrecord
-  # using Docker Bake. The webterm / vscode / marimo images cascade from
-  # terminal via bake's `contexts` substitution. CARTA and carta-psrecord
-  # are standalone leaf targets (Ubuntu-based, no cascade from terminal).
-  # The two CARTA images share an upstream-version pin and always rebuild
-  # together. On day-2 scheduled builds this typically runs with just
-  # `terminal`; on day-3 it runs with the selected day-3 images (webterm /
-  # vscode / marimo / carta / carta-psrecord, plus terminal auto-added for
-  # substitution when any of webterm/vscode/marimo is selected).
+  # Builds terminal / webterm / vscode / marimo / carta / carta-psrecord /
+  # firefly using Docker Bake. The webterm / vscode / marimo images cascade
+  # from terminal via bake's `contexts` substitution. CARTA, carta-psrecord,
+  # and firefly are standalone leaf targets (no cascade from terminal --
+  # CARTA pair is Ubuntu-based; firefly is layered on top of upstream
+  # ipac/firefly via a Tomcat base). The two CARTA images share an
+  # upstream-version pin and always rebuild together. On day-2 scheduled
+  # builds this typically runs with just `terminal`; on day-3 it runs with
+  # the selected day-3 images (webterm / vscode / marimo / carta /
+  # carta-psrecord / firefly, plus terminal auto-added for substitution
+  # when any of webterm/vscode/marimo is selected).
   interactive-stack:
     name: Interactive Stack
     needs: [setup, lint, detect-changes]
@@ -498,11 +533,31 @@ jobs:
           fi
           echo "carta_tag=$CARTA_TAG" >> $GITHUB_OUTPUT
           echo "Derived CARTA_TAG=$CARTA_TAG"
+      # Derive the Firefly tag from firefly's Dockerfile FIREFLY_VERSION arg
+      # so it tracks upstream ipac/firefly releases rather than the monthly
+      # RELEASE_TAG (mirrors the CARTA pattern). The upstream version
+      # strings are clean (e.g. "2025.5"), no PPA-rebuild suffix to strip.
+      # Falls back to "unknown" if the Dockerfile is missing -- bake will
+      # still build, just with that placeholder.
+      - name: Derive Firefly tag
+        id: firefly
+        run: |
+          set -euo pipefail
+          DOCKERFILE=dockerfiles/firefly/Dockerfile
+          if [[ -f "$DOCKERFILE" ]]; then
+            FIREFLY_VERSION=$(awk -F= '/^ARG FIREFLY_VERSION=/ {print $2; exit}' "$DOCKERFILE")
+            FIREFLY_TAG="${FIREFLY_VERSION:-unknown}"
+          else
+            FIREFLY_TAG="unknown"
+          fi
+          echo "firefly_tag=$FIREFLY_TAG" >> $GITHUB_OUTPUT
+          echo "Derived FIREFLY_TAG=$FIREFLY_TAG"
       - name: Build and Push (Bake)
         uses: docker/bake-action@v5
         env:
           RELEASE_TAG: ${{ needs.setup.outputs.release_tag }}
           CARTA_TAG: ${{ steps.carta.outputs.carta_tag }}
+          FIREFLY_TAG: ${{ steps.firefly.outputs.firefly_tag }}
         with:
           targets: ${{ needs.detect-changes.outputs.bake_targets }}
           push: ${{ github.event_name != 'pull_request' }}

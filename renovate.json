@@ -19,6 +19,17 @@
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?(?: versioning=(?<versioning>\\S+))?\\s*(?:\\r\\n|\\n|\\r)ARG [A-Z0-9_]+=(?<currentValue>[^\\r\\n]+)"
       ],
       "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}"
+    },
+    {
+      "customType": "regex",
+      "description": "Gradle `def fireflyTag = '<tag>'` style pins preceded by // renovate: (used in cadc-sso/lib/build.gradle to track the Caltech-IPAC/firefly tag whose firefly.jar is consumed as a compile dep)",
+      "managerFilePatterns": [
+        "/(^|/)build\\.gradle$/"
+      ],
+      "matchStrings": [
+        "// renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?(?: versioning=(?<versioning>\\S+))?\\s*(?:\\r\\n|\\n|\\r)def [A-Za-z0-9_]+ = '(?<currentValue>[^']+)'"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}loose{{/if}}"
     }
   ],
   "packageRules": [
