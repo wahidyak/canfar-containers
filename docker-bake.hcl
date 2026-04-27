@@ -37,9 +37,17 @@ variable "CARTA_TAG" {
   default = "local"
 }
 
+# Firefly tag = upstream ipac/firefly version (e.g. "2025.5"), deliberately
+# decoupled from RELEASE_TAG so Firefly's tag tracks what astronomers
+# actually install (mirrors the CARTA pattern). CI derives this from
+# firefly's Dockerfile FIREFLY_VERSION arg.
+variable "FIREFLY_TAG" {
+  default = "local"
+}
+
 # Default group: building with no target specified builds all interactive images
 group "default" {
-  targets = ["terminal", "webterm", "vscode", "marimo", "carta", "carta-psrecord"]
+  targets = ["terminal", "webterm", "vscode", "marimo", "carta", "carta-psrecord", "firefly"]
 }
 
 # Terminal image: interactive CLI environment built on Python 3.12
@@ -120,6 +128,24 @@ target "carta" {
 target "carta-psrecord" {
   context = "./dockerfiles/carta-psrecord"
   tags = ["${REGISTRY}/cadc/carta-psrecord:${CARTA_TAG}"]
+  args = {
+    REGISTRY = "${REGISTRY}"
+  }
+}
+
+# Firefly image: IPAC Firefly + CADC SSO TokenRelay plugin, launched by Skaha
+# as a first-class "firefly" session type. Standalone -- does NOT inherit
+# from terminal because Firefly is a Tomcat service on top of upstream
+# `ipac/firefly`, not a Debian-derived per-user shell.
+#
+# Two-stage build: a `gradle:jdk21-alpine` builder compiles
+# `cadc-sso-lib-*.jar` (vendored Java sources under dockerfiles/firefly/cadc-sso/),
+# then the final stage layers that jar on top of `ipac/firefly:<FIREFLY_VERSION>`.
+# Tag tracks the upstream ipac/firefly version (e.g. "2025.5"), same pattern
+# as CARTA -- CI derives FIREFLY_TAG from the Dockerfile's FIREFLY_VERSION arg.
+target "firefly" {
+  context = "./dockerfiles/firefly"
+  tags = ["${REGISTRY}/cadc/firefly:${FIREFLY_TAG}"]
   args = {
     REGISTRY = "${REGISTRY}"
   }
