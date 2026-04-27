@@ -52,10 +52,13 @@ canfar-containers/
 Most image directories contain exactly one `Dockerfile`. The exception is
 `firefly/`, which additionally vendors a small Gradle multi-project under
 `cadc-sso/` to compile a Java SSO plugin layered onto upstream
-`ipac/firefly`. The vendored sources are copied verbatim from
-`opencadc/science-containers` and are owned upstream; we do not modify
-them except for one Renovate-tracking annotation in
-`cadc-sso/lib/build.gradle` (the `def fireflyTag = '...'` line).
+`ipac/firefly`. The vendored sources come from
+`opencadc/science-containers` and are owned upstream; we keep only three
+narrowly scoped local edits to keep the plugin ABI-compatible with
+Firefly 2025.x (Tomcat 11) — see §1.8 for the full list — namely a
+Renovate-tracked `def fireflyTag = 'release-2025.5.x'` lift, a
+`jakarta.servlet`-namespaced dep in `lib/build.gradle`, and a matching
+`jakarta.servlet.http.Cookie` import in `TokenRelay.java` and its test.
 
 There are no separate `entrypoint.sh` / `startup.sh` files checked in for
 the Debian-based images — all startup logic is written inline in the
@@ -126,10 +129,22 @@ ipac/firefly:<ver> (pinned @sha)┘   (standalone; two-stage build; FIREFLY_TAG 
   webapp at `/usr/local/tomcat/webapps-ref/firefly/WEB-INF/lib/`. It
   does not inherit from `cadc/terminal` (Tomcat base, not Debian dev
   shell) and does not depend on the CARTA pair. The `cadc-sso/` sources
-  are vendored verbatim from `opencadc/science-containers` and not
-  modified locally except for a single Renovate-tracking annotation.
-  Tagged with the upstream `ipac/firefly` version (e.g. `2025.5`),
-  same scheme as CARTA.
+  are vendored from `opencadc/science-containers` with three small local
+  edits, all narrowly scoped to keep the plugin ABI-compatible with
+  upstream Firefly 2025.x (Tomcat 11): (1) the Caltech-IPAC firefly tag
+  `cadc-sso` compiles against is lifted into a `def fireflyTag` with a
+  Renovate annotation in `lib/build.gradle` and bumped to
+  `release-2025.5.4`; (2) the servlet-API dep in `lib/build.gradle` is
+  `jakarta.servlet:jakarta.servlet-api:6.1.0` (was
+  `javax.servlet:javax.servlet-api:4.0.1`), matching what Firefly itself
+  declares; (3) `TokenRelay.java` and its test import
+  `jakarta.servlet.http.Cookie` (was `javax...`). Without (2) and (3),
+  the plugin hits a `NoSuchMethodError` on every outbound call inside
+  `ipac/firefly:2025.5` because `RequestAgent.getCookie()` now returns
+  `jakarta...Cookie`. Tagged with the upstream `ipac/firefly` version
+  (e.g. `2025.5`), same scheme as CARTA. **Pin invariant: `FIREFLY_VERSION`
+  in the Dockerfile and `fireflyTag` in `lib/build.gradle` MUST stay in
+  the same Firefly major-minor line; review their Renovate PRs together.**
 
 Ports and entrypoints exposed by each interactive image:
 

@@ -35,8 +35,14 @@ dependencies {
     // This dependency is used internally, and not exposed to consumers on their own compile classpath.
     implementation libs.guava
 
-    // Add the javax.servlet-api dependency
-    implementation 'javax.servlet:javax.servlet-api:4.0.1'
+    // Servlet API. Pinned to match the version used by Firefly itself
+    // (see Caltech-IPAC/firefly buildScript/dependencies.gradle at the
+    // tag pinned by `fireflyTag` below). Firefly 2025.x runs on Tomcat 11,
+    // which uses the `jakarta.servlet.*` namespace; using the old
+    // `javax.servlet-api` here causes a NoSuchMethodError at runtime when
+    // TokenRelay calls RequestAgent.getCookie(...) because the upstream
+    // signature now returns `jakarta.servlet.http.Cookie`.
+    implementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
 
     //Firefly 
     implementation fileTree(dir: "$buildDir/firefly/jars/build/", include: ['firefly.jar'])
@@ -51,7 +57,7 @@ dependencies {
     testImplementation fileTree(dir: "$buildDir/firefly/jars/build/", include: ['firefly.jar'])
     testImplementation 'org.apache.logging.log4j:log4j-core:2.24.3'
     testImplementation 'org.apache.logging.log4j:log4j-api:2.24.3'
-    testImplementation 'javax.websocket:javax.websocket-api:1.1'
+    testImplementation 'jakarta.platform:jakarta.jakartaee-web-api:10.0.0'
     testImplementation sourceSets.main.output
 }
 
@@ -97,8 +103,14 @@ check.dependsOn spotlessCheck
 // followed by `def fireflyTag = '<value>'`). Kept as a top-level def in this
 // file rather than embedded in the commandLine string so the regex stays
 // trivial and unambiguous.
+// MUST stay in sync with FIREFLY_VERSION in dockerfiles/firefly/Dockerfile:
+// the Firefly tag we compile cadc-sso against has to expose the same API
+// (`jakarta.servlet.*` since 2025.x / Tomcat 11) as the firefly.jar that
+// will be on the runtime classpath inside `ipac/firefly:<FIREFLY_VERSION>`,
+// otherwise TokenRelay -> RequestAgent.getCookie() throws NoSuchMethodError.
+// Renovate bumps both pins independently; review PRs together.
 // renovate: datasource=github-tags depName=Caltech-IPAC/firefly
-def fireflyTag = 'release-2024.3.5'
+def fireflyTag = 'release-2025.5.4'
 
 tasks.register('cloneFirefly') {
     group = 'build'
