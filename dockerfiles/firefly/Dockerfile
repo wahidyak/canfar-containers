@@ -38,8 +38,14 @@
 # `doLast` blocks (they would need to migrate to `providers.exec` or the
 # new `ExecOperations` service); pinning to gradle 8.x keeps the upstream
 # build script working unmodified, which is the design goal -- the
-# `cadc-sso/` directory is vendored verbatim from opencadc/science-containers
-# and we only patch its Renovate-tracking annotation, never its API usage.
+# `cadc-sso/` directory is vendored from opencadc/science-containers with
+# only minimal local edits: (1) `lib/build.gradle` lifts the Caltech-IPAC
+# tag and the servlet-API dep into Renovate-tracked / jakarta-namespaced
+# values; (2) `lib/src/{main,test}/.../TokenRelay*.java` imports
+# `jakarta.servlet.http.Cookie` instead of `javax...`. Both edits track
+# the Tomcat 9 -> Tomcat 11 migration upstream Firefly made in the
+# 2025.x line; without them, the SSO plugin throws NoSuchMethodError at
+# runtime when called from `ipac/firefly:2025.5`.
 
 # renovate: datasource=docker depName=gradle
 ARG GRADLE_VERSION=8-jdk21-alpine

@@ -78,7 +78,7 @@ import java.net.URI;
 import java.net.URL;
 import java.net.URISyntaxException;
 
-import javax.servlet.http.Cookie;
+import jakarta.servlet.http.Cookie;
 
 /**
  * The {@code TokenRelay} class implements the {@link SsoAdapter} interface to handle

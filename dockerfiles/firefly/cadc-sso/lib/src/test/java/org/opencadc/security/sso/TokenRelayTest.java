@@ -73,7 +73,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
-import javax.servlet.http.Cookie;
+import jakarta.servlet.http.Cookie;
 import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.*;
