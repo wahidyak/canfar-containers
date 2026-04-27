@@ -202,11 +202,26 @@ public class TokenRelay implements SsoAdapter {
     
     /**
      * Sets the authorization credential for the given HTTP service input.
-     * 
-     * This method retrieves an authentication token and, if the token is not null
-     * and the request URL requires an authorization credential, sets the "Authorization"
-     * header of the HTTP service input to "Bearer " followed by the token ID.
-     * 
+     *
+     * <p>This method retrieves the SSO token from the inbound request's
+     * {@code CADC_SSO} cookie and forwards it to the downstream CADC service as a
+     * {@code Cookie} header (e.g. {@code Cookie: CADC_SSO=<value>}). This is the
+     * authentication scheme advertised by CADC services via
+     * {@code WWW-Authenticate: ivoa_cookie standard_id="ivo://ivoa.net/sso#cookie"}
+     * and is the canonical way to relay a CADC session to YouCAT, VOSpace, SIA,
+     * etc. The downstream service unwraps the cookie through the standard CADC
+     * authentication chain and treats the request as authenticated.</p>
+     *
+     * <p><b>Why not {@code Authorization: Bearer}?</b> The opaque CADC_SSO cookie
+     * value is not a JWT/OIDC bearer token, and CADC services advertise their
+     * bearer endpoint as {@code ivoa_bearer ... HACK=temporary}, expecting a
+     * real bearer obtained from {@code https://ws-cadc.canfar.net/ac/login}.
+     * Sending the raw cookie value as a bearer triggers a hard 401 even on
+     * unauthenticated endpoints like {@code /capabilities}, because the service
+     * tries to validate it as a bearer and fails. Sending it as a cookie is
+     * always safe (anonymous endpoints stay anonymous; authenticated endpoints
+     * authenticate cleanly).</p>
+     *
      * @param inputs The HTTP service input for which the authorization credential is to be set.
      */
     @Override
@@ -215,8 +230,8 @@ public class TokenRelay implements SsoAdapter {
         String requestURL = inputs.getRequestUrl();
         Boolean allowed = isRequestToAllowedDomain(requestURL, ALLOWED_DOMAIN);
         if (token != null && token.getId() != null && allowed) {
-            inputs.setHeader("Authorization", "Bearer " + token.getId());
-            LOGGER.info("Authorization Header Set");
+            inputs.setCookie(SSO_COOKIE_NAME, token.getId());
+            LOGGER.info("SSO Cookie forwarded to " + requestURL);
         }
     }
 

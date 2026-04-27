@@ -53,12 +53,11 @@ Most image directories contain exactly one `Dockerfile`. The exception is
 `firefly/`, which additionally vendors a small Gradle multi-project under
 `cadc-sso/` to compile a Java SSO plugin layered onto upstream
 `ipac/firefly`. The vendored sources come from
-`opencadc/science-containers` and are owned upstream; we keep only three
-narrowly scoped local edits to keep the plugin ABI-compatible with
-Firefly 2025.x (Tomcat 11) — see §1.8 for the full list — namely a
-Renovate-tracked `def fireflyTag = 'release-2025.5.x'` lift, a
-`jakarta.servlet`-namespaced dep in `lib/build.gradle`, and a matching
-`jakarta.servlet.http.Cookie` import in `TokenRelay.java` and its test.
+`opencadc/science-containers` and are owned upstream; we keep only four
+narrowly scoped local edits — see §2.6 for the full list — three to
+keep the plugin ABI-compatible with Firefly 2025.x (Tomcat 11), and one
+to fix the auth scheme it sends to downstream CADC services (cookie
+forwarding instead of the broken `Authorization: Bearer` path).
 
 There are no separate `entrypoint.sh` / `startup.sh` files checked in for
 the Debian-based images — all startup logic is written inline in the
@@ -66,6 +65,16 @@ Dockerfile via `RUN cat >…<<EOF` heredocs. Search for `startup.sh` in a
 given Dockerfile to find the embedded script.
 
 ## 2. Image stack and inheritance
+
+This section first sketches the dependency graph (§2.1), then walks
+through how each image is actually built — base, key build steps, the
+`ARG`s the workflow / Renovate care about, and what runtime contract
+the image promises to Skaha (§2.2 – §2.7). If you only have time to
+read one section, §2.1 is enough to operate the pipeline; the rest
+matters when you're modifying a Dockerfile or debugging a build
+failure.
+
+### 2.1. Inheritance overview
 
 All images are published to `images.canfar.net/cadc/` (CANFAR's Harbor
 instance). The dependency chain is:
@@ -138,10 +147,15 @@ ipac/firefly:<ver> (pinned @sha)┘   (standalone; two-stage build; FIREFLY_TAG 
   `jakarta.servlet:jakarta.servlet-api:6.1.0` (was
   `javax.servlet:javax.servlet-api:4.0.1`), matching what Firefly itself
   declares; (3) `TokenRelay.java` and its test import
-  `jakarta.servlet.http.Cookie` (was `javax...`). Without (2) and (3),
+  `jakarta.servlet.http.Cookie` (was `javax...`); (4)
+  `TokenRelay#setAuthCredential` forwards the SSO token as a `Cookie`
+  header (`ivoa_cookie` scheme) instead of as `Authorization: Bearer`,
+  which CADC services reject as a malformed bearer. Without (2) and (3),
   the plugin hits a `NoSuchMethodError` on every outbound call inside
   `ipac/firefly:2025.5` because `RequestAgent.getCookie()` now returns
-  `jakarta...Cookie`. Tagged with the upstream `ipac/firefly` version
+  `jakarta...Cookie`. Without (4), every TAP/SIA call hits a 401 from
+  YouCAT and the user sees *"TAP service does not appear to exist or is
+  not accessible"*. Tagged with the upstream `ipac/firefly` version
   (e.g. `2025.5`), same scheme as CARTA. **Pin invariant: `FIREFLY_VERSION`
   in the Dockerfile and `fireflyTag` in `lib/build.gradle` MUST stay in
   the same Firefly major-minor line; review their Renovate PRs together.**
@@ -157,6 +171,371 @@ Ports and entrypoints exposed by each interactive image:
 | `carta`      | 3002   | `CMD ["carta", "--no_browser"]` (Skaha's `carta` session launcher overrides `CMD` and supplies `--port`, `--http_url_prefix`, `--top_level_folder`, `--debug_no_auth`, `--idle_timeout`, `--enable_scripting`, and the starting folder per-session) |
 | `carta-psrecord` | 3002 | `CMD ["/carta/start.sh"]` (wrapper execs `psrecord carta … --include-io --include-children --interval 1`; re-specifies Skaha's flags from `SKAHA_TOP_LEVEL_DIR` / `SKAHA_PROJECTS_DIR` / `SKAHA_SESSION_URL_PATH` because `carta` is no longer PID 1) |
 | `firefly`    | 8080   | inherited from `ipac/firefly` (Tomcat startup); environment-driven config (`PROPS_sso__framework__adapter`, `CADC_SSO_COOKIE_*`, `CADC_ALLOWED_DOMAIN`, `baseURL`, `PROPS_FIREFLY_OPTIONS`) is supplied by the Skaha-side Deployment manifest, not baked into the image |
+
+### 2.2. `python` — the Debian Python foundation
+
+**Source:** `dockerfiles/python/{3.10,3.11,3.12,3.13,3.14}/Dockerfile`.
+The five files are copies of each other, differing only in the `FROM`
+line (Python version + matching `@sha256:` digest) and the title
+LABEL. There is no shared "base" Dockerfile — Renovate updates each
+file independently, which deliberately decouples Python releases.
+
+**Base:** `python:<ver>-slim` from Docker Hub, **digest-pinned** via a
+`# renovate: datasource=docker depName=python` annotation. `slim` is
+the minimal Debian-based variant (no build tools, no man pages).
+3.14 currently uses `python:3.14-rc-slim` and a comment in the file
+notes that the tag should be moved to `3.14-slim` once 3.14 GAs.
+
+**Three-stage build:**
+
+1. Stage `pixi` — `FROM ghcr.io/prefix-dev/pixi:<ver>@sha256:…`. Used
+   only to extract the pre-compiled `pixi` binary.
+2. Stage `uv` — `FROM ghcr.io/astral-sh/uv:<ver>@sha256:…`. Same
+   trick for `uv` and `uvx`.
+3. Stage `base` — the actual `python:<ver>-slim`. `COPY --from=…`
+   pulls the `pixi`, `uv`, and `uvx` binaries into `/usr/local/bin/`.
+
+The reason for the multi-stage shape (rather than `curl | sh`-style
+installers) is that pixi and uv ship official OCI images of just
+their static binaries, so we get a deterministic, digest-pinned copy
+for free without having to reach for `wget`/`tar`/version negotiation
+inside this image.
+
+**Environment baked in:** `UV_PYTHON_INSTALL_DIR`, `UV_PYTHON_BIN_DIR`,
+`UV_TOOL_DIR`, `UV_TOOL_BIN_DIR`, `PIXI_HOME`, `PIXI_BIN_DIR`,
+`PIXI_CACHE_DIR` are all pointed at `/usr/local/...` so anything `uv`
+or `pixi` install lands in a system-wide path visible to every user
+in the container, not in `~/.local`.
+
+**No CMD / ENTRYPOINT:** `python:slim`'s defaults are inherited.
+Tags are overwritten in place each rebuild (no dated suffix); see
+§4 "What pushes go where".
+
+### 2.3. `terminal` — interactive CLI environment
+
+**Source:** `dockerfiles/terminal/Dockerfile`. **Base:**
+`${REGISTRY}/cadc/python:${PYTHON_VERSION}` (default `3.12`). When
+built locally, this means the locally-built `cadc/python:3.12` is
+required first; under bake (§3), the same trick that wires
+webterm → terminal is *not* used here — `terminal` simply pulls
+`cadc/python:3.12` from Harbor (or uses what's in the local Docker
+image cache).
+
+**Build steps in order:**
+
+1. `ARG REGISTRY=images.canfar.net` and `ARG PYTHON_VERSION=3.12` are
+   declared *before* the `FROM` so the registry and Python-major
+   pin are interpolated into the parent image reference. (Standard
+   Docker quirk: pre-`FROM` `ARG`s are only visible to `FROM` itself
+   — they would need to be re-declared after `FROM` to be readable
+   from later `RUN`s, but here the values aren't needed downstream.)
+2. `apt-get install` a fixed set of CLI packages — `acl`,
+   `bash-completion`, `ca-certificates`, `curl`, `git`, `htop`,
+   `wget`, plus the unpinned `locales`. Each pinned package has a
+   `# renovate: datasource=repology depName=debian_13/<pkg>
+   versioning=deb` annotation directly above its `ARG`. Renovate
+   queries Repology's `debian_13` (Debian Trixie, the base of
+   `python:slim`) to bump the pin. `locales` is unpinned because
+   Repology does not expose it as a standalone project (it ships
+   from the `glibc` source package).
+3. `locale-gen en_US.UTF-8` — without this, Python and curses-based
+   tools warn about Unicode at startup.
+4. Two large `printf > /etc/profile.d/terminal.sh` and
+   `>> /etc/bash.bashrc` heredocs install:
+   - shell aliases (`py`, `ll`, `la`, `..`, `...`, safe `rm`/`cp`/`mv`),
+   - `dircolors` for `ls --color`,
+   - `uv` and `pixi` bash completion (generated dynamically at shell
+     startup, so a `uv` upgrade picks up new flags without a rebuild),
+   - persistent bash history with `histappend`.
+
+**Environment:** `LANG=en_US.UTF-8`, `LC_ALL=en_US.UTF-8`,
+`TERM=xterm-256color`.
+
+**No CMD / ENTRYPOINT:** users invoke `bash` themselves; on Skaha,
+the platform launches whatever it likes against this image.
+
+### 2.4. `webterm`, `vscode`, `marimo` — three terminal-derived siblings
+
+All three live under their own `dockerfiles/<name>/Dockerfile` and
+share the same shape: **`FROM ${REGISTRY}/cadc/terminal:${BASE_TAG}`**,
+add a small fixed apt set on top, then drop in one application
+binary plus a `/cadc/startup.sh`. Common build steps across all
+three:
+
+- `ARG REGISTRY` and `ARG BASE_TAG` are declared before `FROM` so
+  the parent reference `${REGISTRY}/cadc/terminal:${BASE_TAG}` can
+  interpolate. Bake substitutes the locally-built `terminal` target
+  for that reference at build time (see §3).
+- `apt-get install` a Renovate-pinned set: `emacs-nox`, `unzip`,
+  `nano`, `tmux`, `vim-nox`, `procps`, `nodejs`, `npm`. (Marimo
+  drops a few of those it doesn't need; vscode adds `jq` and
+  `libatomic1`.)
+- Install Starship 1.24.x via its official `install.sh` and write
+  `/etc/starship.toml` with the same Gruvbox palette across all
+  three — this keeps the in-app terminal's prompt visually identical
+  whether the user lands in webterm, vscode's integrated terminal,
+  or marimo's Ctrl+J terminal.
+
+What differs:
+
+- **`webterm`** — Adds a Stage 1 `FROM tsl0922/ttyd:<ver>` whose only
+  purpose is `COPY --from=ttyd-bin /usr/bin/ttyd /usr/local/bin/ttyd`.
+  Then `npm install -g` four AI CLIs (GitHub Copilot CLI,
+  Claude Code, Gemini CLI, OpenAI Codex), `curl ... opencode.ai/install`
+  for OpenCode, and `curl ... cursor.com/install` for the Cursor
+  CLI agent. The runtime startup script execs
+  `ttyd ... tmux new-session -A -s canfar`, which gives the user a
+  reattachable bash login shell inside the browser. `EXPOSE 5000`,
+  `CMD ["/cadc/startup.sh"]`. Six application-level
+  `ARG <NAME>_VERSION` pins are tracked: `STARSHIP_VERSION`,
+  `OPENCODE_VERSION`, `COPILOT_CLI_VERSION`, `CLAUDE_CODE_VERSION`,
+  `GEMINI_CLI_VERSION`, `CODEX_CLI_VERSION` (datasources
+  `github-releases` and `npm`).
+- **`vscode`** — Downloads and untars
+  `gitpod-io/openvscode-server` at a `# renovate: datasource=github-releases`-tracked
+  tag into `/opt/openvscode-server`. Writes
+  `/opt/openvscode-server/data/Machine/settings.json` to force
+  bash as the integrated-terminal profile (works around CANFAR
+  setting `SHELL=/sbin/nologin`). Startup script honours the
+  `skaha_sessionid` env var by passing
+  `--server-base-path /session/contrib/$skaha_sessionid` so the
+  IDE's URLs match the session-scoped reverse proxy. `EXPOSE 5000`,
+  `USER vscode` (UID 1000 — overridden by Skaha at runtime),
+  `ENTRYPOINT ["/bin/bash", "-e", "/cadc/startup.sh"]`. **Directory
+  named `openvscode/`, image published as `cadc/vscode`** — the
+  bake target maps the two.
+- **`marimo`** — Smaller. After the apt+starship base layer, just
+  `uv pip install --system marimo==${MARIMO_VERSION}`
+  (`renovate: datasource=pypi`). Startup script execs
+  `marimo --log-level INFO edit --no-token --port 5000 --host 0.0.0.0
+  --skip-update-check --headless`. `EXPOSE 5000`, `ENTRYPOINT
+  ["/bin/bash", "-e", "/cadc/startup.sh"]`.
+
+All three also do `WORKDIR /build_info && COPY Dockerfile
+/build_info/ && uv pip freeze > /build_info/pip.list` so a running
+container can be inspected with `cat /build_info/Dockerfile` to see
+the exact recipe it was built from — useful when a user reports an
+issue and the operator wants to reproduce locally.
+
+**Why the same `terminal` image is the parent and not three
+separate Python copies:** keeps the apt-base layer cached between
+rebuilds and cuts ~150 MiB off each downstream image. The cost is
+the bake-`contexts` indirection in §3, which has to substitute the
+`FROM cadc/terminal:<tag>` reference at build time.
+
+### 2.5. `carta` and `carta-psrecord` — standalone Ubuntu pair
+
+Both Dockerfiles live under `dockerfiles/carta/` and
+`dockerfiles/carta-psrecord/`. Neither inherits from `terminal`
+because CARTA is distributed only via the cartavis-team PPA for
+Ubuntu and the package is not rebuilt for Debian.
+
+**Common base:** `ubuntu:24.04@sha256:…` (digest-pinned,
+`# renovate: datasource=docker depName=ubuntu`). Both files share
+the same digest because Renovate updates them in lockstep — the
+annotation is identical.
+
+**Common build steps:**
+
+1. `apt-get install ca-certificates software-properties-common`.
+   `ca-certificates` is pinned via
+   `# renovate: datasource=repology depName=ubuntu_24_04/ca-certificates`
+   (security-relevant: it's the trust root for the `add-apt-repository`
+   HTTPS fetch of the PPA). `software-properties-common` is
+   intentionally unpinned and purged in the same `RUN` — Repology
+   does not expose it as a standalone Ubuntu project.
+2. `add-apt-repository -y ppa:cartavis-team/carta` then
+   `apt-get install carta=${CARTA_VERSION}`. `CARTA_VERSION` is
+   tracked by **Renovate's `deb` datasource** pointed at
+   `https://ppa.launchpadcontent.net/cartavis-team/carta/ubuntu`
+   with `?suite=noble&components=main&binaryArch=amd64`. This is
+   the only `datasource=deb` pin in the repo; everything else
+   uses `repology`.
+3. `apt-get purge -y --auto-remove software-properties-common` —
+   keeps the final image lean.
+4. `WORKDIR /carta && chmod -R a+rwx /carta`. `ENV HOME=/carta`,
+   `ENV CARTA_DOCKER_DEPLOYMENT=1`.
+5. `EXPOSE 3002` (CARTA's upstream default; Skaha re-specifies the
+   port at runtime).
+
+What differs:
+
+- **`carta`** — Ends with a deliberately bare
+  `CMD ["carta", "--no_browser"]`. Skaha's `carta` session launcher
+  overrides this with a long flag list (`--port`,
+  `--http_url_prefix`, `--top_level_folder`, `--debug_no_auth`,
+  `--idle_timeout`, `--enable_scripting`, starting folder).
+  **Adding any of those flags here has caused Bad Gateway / routing
+  failures in the past** and is documented as a do-not-do in the
+  Dockerfile's comments.
+- **`carta-psrecord`** — Adds `python3-pip` to the apt set (kept in
+  the final image because `psrecord` imports `psutil` and
+  `matplotlib` at runtime), then
+  `pip3 install --no-cache-dir --break-system-packages
+  psrecord==${PSRECORD_VERSION} matplotlib==${MATPLOTLIB_VERSION}`
+  (`# renovate: datasource=pypi` for both).
+  `--break-system-packages` is required by Ubuntu 24.04's PEP 668
+  marker; acceptable here because this is a single-purpose image
+  with no other Python consumers. Then a BuildKit heredoc
+  (`RUN <<RUN_EOF / cat > /carta/start.sh <<'SCRIPT' ... SCRIPT /
+  RUN_EOF`) writes a wrapper that:
+  - reconstructs the full `carta` argv from `SKAHA_TOP_LEVEL_DIR`,
+    `SKAHA_PROJECTS_DIR`, `SKAHA_SESSION_URL_PATH`, `CARTA_PORT`,
+    `CARTA_IDLE_TIMEOUT` (because `carta` is no longer PID 1, Skaha's
+    CMD-override no longer reaches it directly),
+  - execs `psrecord <argv> --log <ts>_carta-backend.log
+    --plot <ts>_carta-backend.png --include-io --interval 1
+    --include-children` writing under `${HOME}/.carta_logs/`,
+  - optionally caps the run at `PSRECORD_DURATION_SECONDS`.
+  The final `CMD ["/carta/start.sh"]` is the wrapper, not `carta`
+  itself.
+
+**`CARTA_TAG` derivation.** Both Dockerfiles pin
+`CARTA_VERSION=5.1.0~noble1` (the `~noble1` suffix is the PPA
+rebuild marker). The CI workflow's "Derive CARTA tag" step strips
+the suffix and exports `CARTA_TAG=5.1.0`, which `docker-bake.hcl`
+applies to both image tags. The two images therefore always carry
+the same Harbor tag and are pushed together. Renovate updating
+`CARTA_VERSION` in either file opens a single PR touching both
+because the `# renovate:` annotation is identical.
+
+### 2.6. `firefly` — IPAC Firefly + CADC SSO plugin
+
+**Source:** `dockerfiles/firefly/Dockerfile` plus the vendored
+`dockerfiles/firefly/cadc-sso/` Gradle multi-project (15 files —
+`settings.gradle`, `gradle.properties`, `gradle/libs.versions.toml`,
+`gradle/wrapper/`, `gradlew`, `gradlew.bat`, `lib/build.gradle`,
+`lib/src/{main,test}/java/org/opencadc/security/sso/...`).
+The image is the only one in the repo that ships compiled Java
+code we built from source.
+
+**Two-stage build:**
+
+1. Stage `builder` —
+   `FROM gradle:${GRADLE_VERSION}@sha256:…`, default
+   `GRADLE_VERSION=8-jdk21-alpine`. **The 8.x pin matters.** Gradle
+   9.x removed the `exec { ... }` API used inside the upstream
+   `lib/build.gradle`'s `doLast { exec { commandLine 'git', 'clone',
+   ... } }` block. The pin keeps the upstream build script
+   working unmodified, which is the design goal — we want `cadc-sso/`
+   to stay a clean fork of `opencadc/science-containers`. Renovate
+   tracks this via `# renovate: datasource=docker depName=gradle`.
+   The stage's single `RUN` is `gradle build --info && ls -l
+   lib/build/libs/cadc-sso-*.jar`. Internally, `gradle build`
+   triggers the task chain defined in `lib/build.gradle`:
+   - `cloneFirefly` — `git clone --depth 1
+     https://github.com/Caltech-IPAC/firefly.git
+     --branch=${fireflyTag} <fireflyDir>`. **`fireflyTag` is a
+     `def` literal in `lib/build.gradle` annotated with
+     `// renovate: datasource=github-tags
+     depName=Caltech-IPAC/firefly`** — picked up by the second
+     custom-regex manager in `renovate.json` (§5.2). Currently
+     `release-2025.5.4`.
+   - `buildFireflyJar` / `linkFireflyJar` — produce `firefly.jar`
+     and stage it under a `fileTree`-resolved `lib/` directory so
+     `cadc-sso-lib` can `implementation` it as a compile-time
+     dependency.
+   - `compileJava` — compiles `TokenRelay.java` against
+     `firefly.jar` plus
+     `jakarta.servlet:jakarta.servlet-api:6.1.0`. Tests link
+     `jakarta.platform:jakarta.jakartaee-web-api:10.0.0` and run
+     under JUnit + Mockito.
+   - `jar` — emits `lib/build/libs/cadc-sso-lib-0.1.jar` (~10 KiB).
+2. Stage runtime —
+   `FROM ipac/firefly:${FIREFLY_VERSION}@sha256:…`, default
+   `FIREFLY_VERSION=2025.5`. Renovate tracks via
+   `# renovate: datasource=docker depName=ipac/firefly`. Single
+   `COPY --from=builder /firefly/cadc-sso/lib/build/libs/cadc-sso-*.jar
+   /usr/local/tomcat/webapps-ref/firefly/WEB-INF/lib/`. Tomcat
+   picks up the jar at startup; the `org.opencadc.security.sso.TokenRelay`
+   class is then available to be selected by the
+   `PROPS_sso__framework__adapter` env var that Skaha passes in.
+   `EXPOSE 8080`. CMD/ENTRYPOINT inherited from upstream
+   `ipac/firefly`.
+
+**Critical pin invariant.** `FIREFLY_VERSION` (Dockerfile, runtime
+stage) and `fireflyTag` (`lib/build.gradle`, builder stage) must
+stay in the same Firefly major-minor line because they bracket the
+same servlet API. `ipac/firefly:2025.5` runs on Tomcat 11
+(`jakarta.servlet`); `release-2025.5.4` of the upstream Firefly
+source declares `jakarta.servlet-api:6.1.0`. Compiling cadc-sso
+against an older `release-2024.3.x` (Tomcat 9 / `javax.servlet`) and
+running it inside `ipac/firefly:2025.x` produces
+`NoSuchMethodError: 'javax.servlet.http.Cookie
+edu.caltech.ipac.firefly.server.RequestAgent.getCookie(java.lang.String)'`
+on every outbound call from TokenRelay — this is exactly the bug
+that motivated the local edits to the vendored `cadc-sso/`. **Review
+the two Renovate PRs together when both bump.**
+
+**The four local edits to vendored `cadc-sso/`** (everything else
+is verbatim from `opencadc/science-containers`):
+
+1. `lib/build.gradle` — lifts the Caltech-IPAC tag into a
+   `def fireflyTag = 'release-2025.5.4'` with a `// renovate:`
+   annotation, so Renovate can bump it. Upstream hardcodes the tag
+   inline.
+2. `lib/build.gradle` — replaces
+   `javax.servlet:javax.servlet-api:4.0.1` with
+   `jakarta.servlet:jakarta.servlet-api:6.1.0`, and
+   `javax.websocket:javax.websocket-api:1.1` with
+   `jakarta.platform:jakarta.jakartaee-web-api:10.0.0`. Matches
+   what Firefly 2025.x itself declares.
+3. `lib/src/main/java/.../TokenRelay.java` and
+   `lib/src/test/java/.../TokenRelayTest.java` — `import
+   jakarta.servlet.http.Cookie;` instead of `import
+   javax.servlet.http.Cookie;`.
+4. `lib/src/main/java/.../TokenRelay.java#setAuthCredential` —
+   forwards the SSO token to the downstream service as a **cookie**
+   (`inputs.setCookie(SSO_COOKIE_NAME, token.getId())`) instead of as
+   `Authorization: Bearer <token>`. The upstream Bearer path is
+   incompatible with current CADC services: YouCAT (and friends)
+   advertise their bearer endpoint as `WWW-Authenticate: ivoa_bearer
+   ... HACK=temporary` and expect a real OIDC/JWT obtained from
+   `https://ws-cadc.canfar.net/ac/login`. Sending the opaque
+   `CADC_SSO` cookie value as a bearer triggers a hard `401` even on
+   anonymous endpoints like `/capabilities`, which Firefly surfaces
+   as *"TAP service does not appear to exist or is not accessible"*.
+   The cookie path uses the `ivoa_cookie` SSO scheme that every CADC
+   service supports natively, so anonymous endpoints stay anonymous
+   and authenticated endpoints authenticate cleanly. The matching
+   `TokenRelayTest#testSetAuthCredentialForwardsCookie` test pins the
+   contract.
+
+**Runtime contract.** The image expects Skaha's Deployment manifest
+to set `PROPS_sso__framework__adapter=org.opencadc.security.sso.TokenRelay`,
+`CADC_SSO_COOKIE_NAME=CADC_SSO`, `CADC_SSO_COOKIE_DOMAIN=.canfar.net`,
+`CADC_ALLOWED_DOMAIN=.canfar.net`, `baseURL=/session/notebook/firefly/`,
+plus a `PROPS_FIREFLY_OPTIONS` JSON blob with TAP service
+pre-configuration. None of those are baked into the image. See §9
+item 10 for the full Skaha-side pending-confirmation list.
+
+**Build cost.** ~10–20 minutes wall-clock on GitHub-hosted runners
+(the Caltech-IPAC clone is the dominant cost, not the actual
+compile). The `interactive-stack` job caches Docker layers via
+`type=gha`, so a rebuild that doesn't touch `cadc-sso/` re-uses the
+builder stage.
+
+### 2.7. Image tagging summary
+
+For quick reference, here is what tag each image carries and why:
+
+| Image                      | Tag value     | Source of truth (file → ARG)                                                  | Overwritten in place? |
+|----------------------------|---------------|-------------------------------------------------------------------------------|------------------------|
+| `cadc/python:<ver>`        | Python ver    | filename suffix (`3.10`, ..., `3.14`)                                         | yes (no dated suffix)  |
+| `cadc/terminal:<YY.MM>`    | release tag   | `setup` job: `date -u +'%y.%m'`                                                | no (per month)         |
+| `cadc/webterm:<YY.MM>`     | release tag   | same                                                                          | no                     |
+| `cadc/vscode:<YY.MM>`      | release tag   | same                                                                          | no                     |
+| `cadc/marimo:<YY.MM>`      | release tag   | same                                                                          | no                     |
+| `cadc/carta:<x.y.z>`       | upstream CARTA| `dockerfiles/carta/Dockerfile` → `CARTA_VERSION` (strip `~noble1`)            | per-version (overwritten on PPA rebuild) |
+| `cadc/carta-psrecord:<x.y.z>` | upstream CARTA| same source as `carta` (shared tag)                                         | per-version            |
+| `cadc/firefly:<x.y>`       | upstream Firefly | `dockerfiles/firefly/Dockerfile` → `FIREFLY_VERSION`                       | per-version            |
+
+The two version-tagged images (`carta`/`carta-psrecord` and
+`firefly`) *can* be re-pushed at the same tag if a Renovate PR bumps
+something other than the upstream version (e.g. `psrecord`,
+`matplotlib`, `cadc-sso` Java deps, or an apt security patch in the
+underlying Ubuntu / Tomcat layer). This mirrors the Python-tag
+overwrite policy and is documented in §4 "What pushes go where".
 
 ## 3. Build orchestration
 

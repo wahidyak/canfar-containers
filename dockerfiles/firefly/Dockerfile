@@ -10,9 +10,14 @@
 # starts Tomcat -- but ships an additional `cadc-sso-lib-*.jar` plugin
 # inside Firefly's `WEB-INF/lib/` that implements the
 # `org.opencadc.security.sso.TokenRelay` `sso.framework.adapter` extension.
-# The plugin reads the `CADC_SSO` cookie on inbound requests and converts
-# it into a `Bearer <token>` header for Firefly's outbound calls to CADC
-# data services (YouCAT / VOSpace / etc.) so users see authenticated data.
+# The plugin reads the `CADC_SSO` cookie on inbound requests and forwards
+# it to Firefly's outbound calls to CADC data services (YouCAT / VOSpace /
+# etc.) as a `Cookie: CADC_SSO=<value>` header (the `ivoa_cookie` SSO
+# scheme that CADC services advertise via WWW-Authenticate). This is the
+# canonical CADC auth path; sending the opaque cookie value as a Bearer
+# token instead -- which the upstream cadc-sso plugin does -- triggers a
+# 401 from YouCAT even on unauthenticated endpoints like /capabilities,
+# because YouCAT's bearer support expects an OIDC/JWT from /ac/login.
 #
 # Vendored from opencadc/science-containers (upstream maintainer of the
 # Java SSO plugin). The `cadc-sso/` directory is a self-contained Gradle
@@ -39,13 +44,20 @@
 # new `ExecOperations` service); pinning to gradle 8.x keeps the upstream
 # build script working unmodified, which is the design goal -- the
 # `cadc-sso/` directory is vendored from opencadc/science-containers with
-# only minimal local edits: (1) `lib/build.gradle` lifts the Caltech-IPAC
-# tag and the servlet-API dep into Renovate-tracked / jakarta-namespaced
-# values; (2) `lib/src/{main,test}/.../TokenRelay*.java` imports
-# `jakarta.servlet.http.Cookie` instead of `javax...`. Both edits track
-# the Tomcat 9 -> Tomcat 11 migration upstream Firefly made in the
-# 2025.x line; without them, the SSO plugin throws NoSuchMethodError at
-# runtime when called from `ipac/firefly:2025.5`.
+# only minimal local edits:
+#   (1) `lib/build.gradle` lifts the Caltech-IPAC tag and the servlet-API
+#       dep into Renovate-tracked / jakarta-namespaced values.
+#   (2) `lib/src/{main,test}/.../TokenRelay*.java` imports
+#       `jakarta.servlet.http.Cookie` instead of `javax...`.
+#   (3) `lib/src/main/.../TokenRelay.java#setAuthCredential` forwards the
+#       SSO token as a Cookie (`inputs.setCookie(SSO_COOKIE_NAME, ...)`)
+#       instead of as `Authorization: Bearer ...`. The upstream Bearer
+#       path is incompatible with current CADC services (see top of file).
+# Edits (1)+(2) track the Tomcat 9 -> Tomcat 11 migration upstream Firefly
+# made in the 2025.x line; without them, the SSO plugin throws
+# NoSuchMethodError at runtime when called from `ipac/firefly:2025.5`.
+# Edit (3) is the actual auth fix -- without it the plugin loads cleanly
+# but every outbound TAP/SIA call hits 401.
 
 # renovate: datasource=docker depName=gradle
 ARG GRADLE_VERSION=8-jdk21-alpine
