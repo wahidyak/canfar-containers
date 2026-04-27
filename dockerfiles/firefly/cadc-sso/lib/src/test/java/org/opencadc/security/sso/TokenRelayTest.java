@@ -68,6 +68,7 @@ package org.opencadc.security.sso;
 
 import edu.caltech.ipac.firefly.data.userdata.UserInfo;
 import edu.caltech.ipac.firefly.server.RequestAgent;
+import edu.caltech.ipac.firefly.server.network.HttpServiceInput;
 import edu.caltech.ipac.firefly.server.security.SsoAdapter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -262,6 +263,45 @@ class TokenRelayTest {
         boolean result = TokenRelay.isRequestToAllowedDomain(requestURL, allowedDomain);
 
         assertFalse(result);
+    }
+
+    @Test
+    void testSetAuthCredentialForwardsCookie() {
+        // Given a valid SSO cookie on the inbound request, setAuthCredential must
+        // forward it to the downstream service as a Cookie (ivoa_cookie scheme),
+        // NOT as Authorization: Bearer (which CADC services reject).
+        Cookie validCookie = new Cookie("CADC_SSO", "valid_token");
+        validCookie.setDomain(".canfar.net");
+        when(mockAgent.getCookie("CADC_SSO")).thenReturn(validCookie);
+
+        TokenRelay spyRelay = Mockito.spy(tokenRelay);
+        doReturn(mockAgent).when(spyRelay).getRequestAgent();
+
+        HttpServiceInput inputs = mock(HttpServiceInput.class);
+        when(inputs.getRequestUrl()).thenReturn("https://ws-uv.canfar.net/youcat/capabilities");
+
+        spyRelay.setAuthCredential(inputs);
+
+        verify(inputs, times(1)).setCookie("CADC_SSO", "valid_token");
+        verify(inputs, never()).setHeader(eq("Authorization"), anyString());
+    }
+
+    @Test
+    void testSetAuthCredentialSkipsForeignDomain() {
+        Cookie validCookie = new Cookie("CADC_SSO", "valid_token");
+        validCookie.setDomain(".canfar.net");
+        when(mockAgent.getCookie("CADC_SSO")).thenReturn(validCookie);
+
+        TokenRelay spyRelay = Mockito.spy(tokenRelay);
+        doReturn(mockAgent).when(spyRelay).getRequestAgent();
+
+        HttpServiceInput inputs = mock(HttpServiceInput.class);
+        when(inputs.getRequestUrl()).thenReturn("https://example.org/ignored");
+
+        spyRelay.setAuthCredential(inputs);
+
+        verify(inputs, never()).setCookie(anyString(), anyString());
+        verify(inputs, never()).setHeader(eq("Authorization"), anyString());
     }
 
     @Test
