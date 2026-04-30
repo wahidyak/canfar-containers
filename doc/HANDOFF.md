@@ -15,6 +15,58 @@ operational and maintenance concerns.
 
 ---
 
+## Table of contents
+
+- [Glossary](#glossary)
+- [1. Repository layout](#1-repository-layout)
+- [2. Image stack and inheritance](#2-image-stack-and-inheritance)
+  - [2.1. Inheritance overview](#21-inheritance-overview)
+  - [2.2. `python` — the Debian Python foundation](#22-python--the-debian-python-foundation)
+  - [2.3. `terminal` — interactive CLI environment](#23-terminal--interactive-cli-environment)
+  - [2.4. `webterm`, `vscode`, `marimo` — three terminal-derived siblings](#24-webterm-vscode-marimo--three-terminal-derived-siblings)
+  - [2.5. `carta` and `carta-psrecord` — standalone Ubuntu pair](#25-carta-and-carta-psrecord--standalone-ubuntu-pair)
+  - [2.6. `firefly` — IPAC Firefly + CADC SSO plugin](#26-firefly--ipac-firefly--cadc-sso-plugin)
+    - [Re-syncing `cadc-sso/` from upstream](#re-syncing-cadc-sso-from-upstream)
+  - [2.7. Image tagging summary](#27-image-tagging-summary)
+- [3. Build orchestration](#3-build-orchestration)
+- [4. CI/CD workflow](#4-cicd-workflow)
+- [5. External services and secrets](#5-external-services-and-secrets)
+- [6. Local development](#6-local-development)
+- [7. Adding a new image to the stack](#7-adding-a-new-image-to-the-stack)
+- [8. Known state and orphans](#8-known-state-and-orphans)
+- [9. Pending confirmation items (for upstream adopter)](#9-pending-confirmation-items-for-upstream-adopter)
+
+---
+
+## Glossary
+
+Acronyms and product names used throughout this document and the rest
+of the repo. If you've never worked on CANFAR before, skim this first.
+
+| Term | Expansion / meaning |
+|------|---------------------|
+| **CANFAR** | Canadian Advanced Network for Astronomical Research. The umbrella platform that hosts all of these images. |
+| **CADC** | Canadian Astronomy Data Centre (NRC Herzberg, Victoria BC). Operates CANFAR. The published images live under `images.canfar.net/cadc/`. |
+| **Skaha** | The CANFAR **Science Platform** session manager — a Kubernetes-based service that launches per-user containers (notebooks, terminals, CARTA, Firefly, …) and proxies users to them. The images in this repo are consumed by Skaha as **session types**. |
+| **Harbor** | The OCI image registry where these images are published, hosted at `images.canfar.net`. |
+| **IPAC Firefly** | Server-side Java/Tomcat web app for astronomical image / table / catalog visualization, developed by IPAC at Caltech. Upstream: [`Caltech-IPAC/firefly`](https://github.com/Caltech-IPAC/firefly), reference image: `ipac/firefly` on Docker Hub. |
+| **CARTA** | Cube Analysis and Rendering Tool for Astronomy. Standalone scientific viewer for radio-astronomy image cubes; distributed only via the [`cartavis-team/carta`](https://launchpad.net/~cartavis-team/+archive/ubuntu/carta) Ubuntu PPA. |
+| **PPA** | Personal Package Archive — Launchpad-hosted apt repository. CARTA is published exclusively via the `cartavis-team/carta` PPA, which is why the CARTA images cannot inherit from our Debian-based `terminal`. |
+| **TokenRelay** | The small Java SSO adapter we layer onto upstream Firefly (`org.opencadc.security.sso.TokenRelay`). Reads the `CADC_SSO` cookie from inbound requests and forwards it to outbound CADC service calls so users see authenticated data. Source vendored under `dockerfiles/firefly/cadc-sso/` (see §2.6). |
+| **IVOA** | International Virtual Observatory Alliance — the standards body whose protocols (TAP, SIA, VOSpace, SSO) all CADC services implement. |
+| **TAP** | IVOA Table Access Protocol. Astronomical-table query service exposed by CADC's [YouCAT](https://www.canfar.net/en/docs/services/) implementation. Firefly issues TAP queries on behalf of the logged-in user via TokenRelay. |
+| **SIA** | IVOA Simple Image Access. Image-cutout / discovery service. Used the same way as TAP. |
+| **VOSpace** | IVOA virtual-storage service. CADC's user data lives under `vos://cadc.nrc.ca!vault/<user>/`. |
+| **YouCAT** | CADC's TAP service implementation. Hosted at `https://ws-cadc.canfar.net/youcat/`. |
+| **`ivoa_cookie` / `ivoa_bearer`** | The two SSO challenge schemes IVOA defines. `ivoa_cookie` is what CADC services support natively; `ivoa_bearer` advertises an OIDC/JWT endpoint that Firefly's upstream `TokenRelay` *tries* to use, which is why the local edit (4) in §2.6 forwards the cookie instead. |
+| **Renovate** | The dependency-update bot ([Mend](https://www.mend.io/)) that opens PRs to bump pinned versions. Configured in `renovate.json`; covered in §5.2. |
+| **Repology** | Cross-distribution package version tracker ([repology.org](https://repology.org/)). Renovate's `repology` datasource queries it to find newer Debian / Ubuntu apt versions. |
+| **`YY.MM` tag** | The two-digit-year, two-digit-month tag scheme (e.g. `26.04`) used for the Debian-based interactive stack. CARTA & Firefly use upstream version tags instead. |
+| **`release/YY.MM`** | The annotated git tag pushed by the day-3 cron after a successful release. Used as the diff anchor for the next month's `detect-changes` step. |
+| **AGPL-3.0** | GNU Affero General Public License v3.0 — the license declared in the repo's root `LICENSE` and inherited from `opencadc/canfar-containers`'s initial commit. |
+
+---
+
 ## 1. Repository layout
 
 ```
@@ -497,6 +549,125 @@ is verbatim from `opencadc/science-containers`):
    and authenticated endpoints authenticate cleanly. The matching
    `TokenRelayTest#testSetAuthCredentialForwardsCookie` test pins the
    contract.
+
+#### Re-syncing `cadc-sso/` from upstream
+
+The `dockerfiles/firefly/cadc-sso/` tree is vendored from
+[`opencadc/science-containers`](https://github.com/opencadc/science-containers/tree/main/science-containers/Dockerfiles/firefly/cadc-sso),
+not pulled at build time. Upstream owns the design of the SSO
+adapter; we only carry the four edits listed above. When upstream
+publishes meaningful changes (a new Firefly major-minor line, a
+servlet-API bump, a new task in `lib/build.gradle`, a refactor of
+`TokenRelay.java`, etc.) we need to fold them in without losing our
+edits. Use this recipe.
+
+**Signals that a re-sync is due:**
+
+- A new Firefly major-minor line is out (e.g. `2026.x`) and we want
+  to bump `FIREFLY_VERSION` past it. Upstream `cadc-sso` typically
+  ships an associated `fireflyTag` / servlet-API bump in the same
+  cadence; staying behind risks compile or runtime drift.
+- A CVE in a transitive dep (log4j, mockito, palantir-java-format,
+  spotless) is announced. Renovate's `gradle` manager will normally
+  open a PR; cross-check against upstream `libs.versions.toml` so we
+  don't drift in the *opposite* direction from upstream.
+- An issue is filed against `opencadc/science-containers` describing
+  a TokenRelay bug (cookie domain handling, anonymous-endpoint regression,
+  etc.) and the fix lands in their `cadc-sso/`.
+
+There is no automation that *detects* upstream commits to `cadc-sso/`
+— Renovate only tracks the `fireflyTag` literal and the Maven deps,
+not the surrounding Java/Gradle source. Glance at upstream's
+`science-containers` repo at least once per Firefly major-minor cycle
+(roughly every 3 – 6 months in practice).
+
+**Recipe:**
+
+```bash
+# 1. From a clean working tree on a fresh branch.
+cd /path/to/canfar-containers
+git checkout main && git pull
+git checkout -b chore/cadc-sso-resync-<YYYYMM>
+
+# 2. Snapshot upstream's cadc-sso into a scratch dir for diffing.
+TMP=$(mktemp -d)
+git clone --depth 1 https://github.com/opencadc/science-containers.git "$TMP/sc"
+UPSTREAM="$TMP/sc/science-containers/Dockerfiles/firefly/cadc-sso"
+LOCAL="dockerfiles/firefly/cadc-sso"
+
+# 3. See exactly what changed since our last sync.
+diff -urN "$LOCAL" "$UPSTREAM" | less
+# Or, file-by-file:
+diff -u "$LOCAL/lib/build.gradle"                        "$UPSTREAM/lib/build.gradle"
+diff -u "$LOCAL/lib/src/main/java/.../TokenRelay.java"   "$UPSTREAM/lib/src/main/java/.../TokenRelay.java"
+diff -u "$LOCAL/gradle/libs.versions.toml"               "$UPSTREAM/gradle/libs.versions.toml"
+
+# 4. Identify which hunks are upstream changes vs. our four edits.
+#    Our four edits are deterministic; everything else is upstream.
+#    See the "four local edits" list immediately above this section.
+
+# 5. Wholesale-replace cadc-sso/ with upstream, then re-apply our edits.
+rm -rf "$LOCAL"
+cp -a "$UPSTREAM" "$LOCAL"
+```
+
+Then re-apply the four local edits (the only divergence we carry):
+
+| # | File | Change |
+|---|------|--------|
+| 1 | `lib/build.gradle` | Lift the hardcoded `--branch=release-…` argument inside the `cloneFirefly` task into a top-level `def fireflyTag = '<value>'` with a `// renovate: datasource=github-tags depName=Caltech-IPAC/firefly` annotation directly above it. Bump the value to the latest stable upstream Firefly tag matching `FIREFLY_VERSION` in `dockerfiles/firefly/Dockerfile`. |
+| 2 | `lib/build.gradle` | In the `dependencies { … }` block: replace `javax.servlet:javax.servlet-api:4.0.1` with `jakarta.servlet:jakarta.servlet-api:6.1.0` (or whatever Firefly itself currently declares — check `Caltech-IPAC/firefly` `buildScript/dependencies.gradle` at the pinned tag). Replace `javax.websocket:javax.websocket-api:1.1` with `jakarta.platform:jakarta.jakartaee-web-api:10.0.0`. |
+| 3 | `lib/src/main/java/org/opencadc/security/sso/TokenRelay.java` and `lib/src/test/java/.../TokenRelayTest.java` | Change `import javax.servlet.http.Cookie;` to `import jakarta.servlet.http.Cookie;` in both files. |
+| 4 | `lib/src/main/java/.../TokenRelay.java` (`setAuthCredential` method) | Replace the upstream Bearer-token path with `inputs.setCookie(SSO_COOKIE_NAME, token.getId());`. The corresponding test `TokenRelayTest#testSetAuthCredentialForwardsCookie` pins the contract — keep it. |
+
+```bash
+# 6. Verify the build still compiles end-to-end (~5 min on a warm cache,
+#    ~15-20 min from scratch — the in-build Caltech-IPAC clone dominates).
+docker buildx bake firefly --no-cache --progress=plain
+
+# 7. Smoke-test the resulting image: confirm the jar is in place and the
+#    TokenRelay class compiled.
+docker run --rm --entrypoint /bin/sh images.canfar.net/cadc/firefly:local \
+  -c 'ls -la /usr/local/tomcat/webapps-ref/firefly/WEB-INF/lib/cadc-sso-*.jar'
+# Expected: a single cadc-sso-lib-0.1.jar of ~3-10 KiB.
+
+# 8. Commit. Keep the upstream-replay commit and the local-edits-replay
+#    commit separate so future bisects can isolate which side broke.
+git add dockerfiles/firefly/cadc-sso/
+git commit -m "chore(cadc-sso): re-sync from opencadc/science-containers@<short-sha>"
+# Then re-apply edits and:
+git commit -m "chore(cadc-sso): re-apply 4 local edits (jakarta.servlet + cookie auth)"
+
+# 9. Open the PR during the merge window (days 5–27, see RELEASE-CADENCE).
+#    Cross-link the upstream commit so reviewers can see what we picked up.
+```
+
+**What can go wrong:**
+
+- **Upstream removes the `cloneFirefly` / `buildFireflyJar` task chain
+  in favor of a Maven Central artifact for `firefly.jar`.** Our `def
+  fireflyTag` literal would no longer be needed; replace edit (1) with
+  whatever annotation tracks the new dependency. Update §2.6's
+  "Two-stage build" description to match.
+- **Upstream removes the Gradle 8.x-only `exec { … }` block.** The
+  `GRADLE_VERSION=8-jdk21-alpine` pin in the Dockerfile becomes
+  optional; consider bumping to a 9.x line in the same PR.
+- **Upstream switches servlet API again** (e.g. Tomcat 12 ships with
+  a different namespace). Update the imports in `TokenRelay.java`
+  *and* the dependency line in `lib/build.gradle` *and* the runtime
+  `FIREFLY_VERSION` pin together — the three are coupled.
+- **Upstream changes the `setAuthCredential` signature.** Our cookie
+  path (edit 4) is method-body-local; if the method is renamed or
+  splits into two, mirror the change but keep `inputs.setCookie(…)`
+  in the relevant codepath. The `TokenRelayTest#testSetAuthCredentialForwardsCookie`
+  test must still pass — that's the line in the sand.
+
+If after a re-sync the only diff between `dockerfiles/firefly/cadc-sso/`
+and upstream `opencadc/science-containers/.../cadc-sso/` is the four
+edits above, the sync was clean. Anything else is either an upstream
+change we haven't picked up yet (re-do the sync) or a local change that
+should either be promoted to upstream as a PR or explicitly added to
+this list.
 
 **Runtime contract.** The image expects Skaha's Deployment manifest
 to set `PROPS_sso__framework__adapter=org.opencadc.security.sso.TokenRelay`,
