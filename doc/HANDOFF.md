@@ -25,9 +25,6 @@ canfar-containers/
 ├── README.md                             # Architecture + user-facing docs
 ├── docker-bake.hcl                       # Multi-target build config for the interactive stack
 ├── renovate.json                         # Renovate schedule + custom regex manager
-├── archive/                              # Retired image definitions (not built by CI)
-│   ├── base/Dockerfile.retired
-│   └── build.sh                          # Old manual build script (references retired images)
 ├── doc/
 │   ├── HANDOFF.md                        # This file
 │   └── RELEASE-CADENCE.md                # Merge window / release window policy
@@ -937,12 +934,6 @@ Concrete steps, derived from how the existing images are wired:
 These are observed as of this handoff. They are intentional mentions,
 not hidden problems.
 
-- **`archive/`** contains `base/Dockerfile.retired` and `build.sh`. The
-  shell script is a standalone manual build script that references an
-  older five-layer hierarchy (`base`, `python`, `terminal`, `webterm`,
-  `opencode`) that no longer corresponds to the current stack. It is
-  not invoked by the workflow or referenced elsewhere in CI. Treat it
-  as historical.
 - **Two hadolint rules are globally ignored** (`DL3008`, `DL3013`) via
   `.hadolint.yaml`. The rationale is in the config file's comments:
   `DL3008` because some apt packages are deliberately unpinned

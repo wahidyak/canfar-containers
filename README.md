@@ -11,7 +11,6 @@ canfar-containers/
 ├── .hadolint.yaml      # Hadolint (Dockerfile linter) configuration
 ├── docker-bake.hcl     # Multi-target build definition for the interactive stack
 ├── renovate.json       # Renovate (dependency-update bot) configuration
-├── archive/            # Retired image definitions (kept for historical reference; not built or published)
 ├── doc/                # Additional documentation
 │   ├── HANDOFF.md          # Operational / maintenance reference
 │   └── RELEASE-CADENCE.md  # Merge window / release window policy
